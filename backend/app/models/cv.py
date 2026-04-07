@@ -14,7 +14,8 @@ class CV(Base):
     userId = Column(
         String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
     )
-    latexSource = Column(String, nullable=False)
+    latexSource = Column(String, nullable=True)  # legacy, kept for rollback
+    structuredData = Column(String, nullable=True)  # JSON string — the new source of truth
     updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="cv")

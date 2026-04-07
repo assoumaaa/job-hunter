@@ -256,6 +256,8 @@ export default function Jobs() {
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
 	const [datePosted, setDatePosted] = useState("week");
+	const [fetchLinkedin, setFetchLinkedin] = useState(true);
+	const [fetchGreenhouse, setFetchGreenhouse] = useState(true);
 	const [filterCompany, setFilterCompany] = useState("");
 	const [filterTitle, setFilterTitle] = useState("");
 	const [viewFilter, setViewFilter] = useState("to_apply");
@@ -276,10 +278,10 @@ export default function Jobs() {
 				if (
 					viewFilter === "to_apply" &&
 					((j.relevanceStatus !== "good_fit" && j.relevanceStatus !== "maybe") ||
-						j.applicationStatus === "applied")
+						j.applicationStatus !== "new")
 				)
 					return false;
-				if (viewFilter === "applied" && j.applicationStatus !== "applied") return false;
+				if (viewFilter === "applied" && j.applicationStatus === "new") return false;
 				if (viewFilter === "no_fit" && j.relevanceStatus !== "irrelevant") return false;
 				if (filterCompany && !j.company.toLowerCase().includes(filterCompany.toLowerCase())) return false;
 				if (filterTitle && !j.title.toLowerCase().includes(filterTitle.toLowerCase())) return false;
@@ -336,7 +338,12 @@ export default function Jobs() {
 				cellStyle: { display: "flex", alignItems: "center" },
 				cellRenderer: ({ data }) => (
 					<div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, overflow: "hidden", height: "100%" }}>
-						<span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 500, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+						<span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 500, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 4 }}>
+							{data.source === "linkedin" ? (
+								<svg viewBox="0 0 24 24" style={{ width: 12, height: 12, flexShrink: 0 }} fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+							) : data.source === "greenhouse" ? (
+								<svg viewBox="0 0 24 24" style={{ width: 12, height: 12, flexShrink: 0 }} fill="#3B8427"><circle cx="12" cy="12" r="10"/><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text></svg>
+							) : null}
 							{data.company}
 							{data.location && (
 								<span style={{ color: "#d4d4d8", marginLeft: 6 }}>
@@ -434,15 +441,23 @@ export default function Jobs() {
 	);
 
 	const handleFetch = () => {
+		const sources = [];
+		if (fetchLinkedin) sources.push("linkedin");
+		if (fetchGreenhouse) sources.push("greenhouse");
+		if (!sources.length) return;
+
 		callApi("/jobs/fetch", {
 			method: "POST",
-			json: { datePosted },
+			json: { datePosted, sources },
 			alias: "fetchJobs",
 			error: "Failed to fetch jobs",
 			onSuccess: (fetchData) => {
-				enqueueSnackbar(fetchData.inserted > 0 ? `${fetchData.inserted} new jobs fetched` : "No new jobs", {
-					variant: fetchData.inserted > 0 ? "success" : "default",
-				});
+				const src = fetchData.bySource || {};
+				const parts = Object.entries(src)
+					.filter(([, v]) => typeof v === "number" && v > 0)
+					.map(([k, v]) => `${v} from ${k}`);
+				const msg = parts.length ? `${fetchData.inserted} new jobs (${parts.join(", ")})` : "No new jobs";
+				enqueueSnackbar(msg, { variant: fetchData.inserted > 0 ? "success" : "default" });
 
 				if (fetchData.inserted > 0) {
 					return callApi("/jobs/screen", {
@@ -617,10 +632,10 @@ export default function Jobs() {
 					className="w-44 h-8 text-xs"
 				/>
 				<select className={selectCls} value={viewFilter} onChange={(e) => setViewFilter(e.target.value)}>
-					<option value="to_apply">To apply</option>
-					<option value="applied">Applied</option>
-					<option value="no_fit">No fit</option>
-					<option value="all">All</option>
+					<option value="to_apply">To Apply</option>
+					<option value="applied">In Progress</option>
+					<option value="no_fit">No Fit</option>
+					<option value="all">All Jobs</option>
 				</select>
 				<Button
 					variant="ghost"
@@ -649,12 +664,20 @@ export default function Jobs() {
 							<option value="week">Last week</option>
 							<option value="month">Last month</option>
 						</select>
+						<label className="flex items-center gap-1 text-xs text-zinc-600 cursor-pointer">
+							<input type="checkbox" checked={fetchLinkedin} onChange={(e) => setFetchLinkedin(e.target.checked)} className="rounded border-zinc-300" />
+							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+						</label>
+						<label className="flex items-center gap-1 text-xs text-zinc-600 cursor-pointer">
+							<input type="checkbox" checked={fetchGreenhouse} onChange={(e) => setFetchGreenhouse(e.target.checked)} className="rounded border-zinc-300" />
+							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#3B8427"><circle cx="12" cy="12" r="10"/><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text></svg>
+						</label>
 						<Button
 							variant="outline"
 							size="sm"
 							className="h-8"
 							onClick={handleFetch}
-							disabled={loading?.fetchJobs}
+							disabled={loading?.fetchJobs || (!fetchLinkedin && !fetchGreenhouse)}
 						>
 							<RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading?.fetchJobs ? "animate-spin" : ""}`} />
 							{loading?.fetchJobs ? "Fetching..." : "Fetch"}

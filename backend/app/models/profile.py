@@ -24,5 +24,7 @@ class Profile(Base):
     languages = Column(String, nullable=True)  # JSON string
     keywords = Column(String, nullable=True)  # JSON string
     jobTypes = Column(String, nullable=True)  # JSON string
+    narrative = Column(String, nullable=True)  # free-text career story
+    dealBreakers = Column(String, nullable=True)  # JSON string list
 
     user = relationship("User", back_populates="profile")

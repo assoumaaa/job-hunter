@@ -23,6 +23,9 @@ class Job(Base):
     fetchedAt = Column(DateTime, default=datetime.utcnow)
 
     relevanceStatus = Column(String, default="unscreened")
+    archetype = Column(String, nullable=True)  # e.g. "backend", "frontend", "devops"
+    screeningScore = Column(String, nullable=True)  # 1-5 score from screening
+    screeningReason = Column(String, nullable=True)  # one-line explanation
     agentStatus = Column(String, default="pending")
     atsScore = Column(Integer, nullable=True)
     atsBreakdown = Column(String, nullable=True)  # JSON string

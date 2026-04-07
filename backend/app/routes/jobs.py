@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -25,7 +24,7 @@ from ..schemas.job import (
     SyncRequest,
     SyncResult,
 )
-from ..services import claude, apify
+from ..services import claude, apify, greenhouse
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -96,9 +95,10 @@ def generate_cv(
         raise HTTPException(status_code=400, detail="No job IDs provided")
 
     user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
-    if not user_cv:
-        raise HTTPException(status_code=400, detail="No CV found. Please add your CV first.")
+    if not user_cv or not user_cv.structuredData:
+        raise HTTPException(status_code=400, detail="No CV found. Please upload your CV first.")
 
+    base_cv_data = json.loads(user_cv.structuredData)
     profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
 
     languages = json.loads(profile.languages) if profile and profile.languages else []
@@ -126,6 +126,7 @@ def generate_cv(
     candidate_name = (profile.fullName if profile else None) or current_user.name or "Candidate"
     linkedin_url = profile.linkedinUrl if profile else None
     github_url = profile.githubUrl if profile else None
+    narrative = profile.narrative if profile else None
 
     results = []
     for job_id in body.jobIds:
@@ -136,8 +137,10 @@ def generate_cv(
         job.agentStatus = "generating"
         db.commit()
 
+        archetype = job.archetype
+
         result = claude.generate_cv_and_cl(
-            user_cv.latexSource,
+            base_cv_data,
             job.description or "",
             job.title,
             job.company,
@@ -148,13 +151,15 @@ def generate_cv(
             candidate_name,
             linkedin_url,
             github_url,
+            archetype,
+            narrative,
         )
 
         if result.ats_breakdown.decision == "NEEDS_REVISION" and result.ats_score >= 70:
             job.agentStatus = "reviewing"
             db.commit()
             result = claude.generate_cv_and_cl(
-                user_cv.latexSource,
+                base_cv_data,
                 job.description or "",
                 job.title,
                 job.company,
@@ -165,11 +170,13 @@ def generate_cv(
                 candidate_name,
                 linkedin_url,
                 github_url,
+                archetype,
+                narrative,
             )
 
         if result.ats_breakdown.decision == "NEEDS_REVISION" and result.ats_score >= 70:
             result = claude.generate_cv_and_cl(
-                user_cv.latexSource,
+                base_cv_data,
                 job.description or "",
                 job.title,
                 job.company,
@@ -180,7 +187,13 @@ def generate_cv(
                 candidate_name,
                 linkedin_url,
                 github_url,
+                archetype,
+                narrative,
             )
+
+        # Assemble final CV: generated sections + base header
+        assembled = {**result.resume}
+        assembled["header"] = base_cv_data.get("header", {})
 
         job.agentStatus = "rejected" if result.ats_score < 70 else "done"
         job.atsScore = result.ats_score
@@ -195,7 +208,7 @@ def generate_cv(
                 "gaps": result.ats_breakdown.gaps,
             }
         )
-        job.generatedCv = _assemble_cv(user_cv.latexSource, result.resume)
+        job.generatedCv = json.dumps(assembled)
         job.generatedCl = result.cover_letter
         job.generatedAt = datetime.utcnow()
         job.updatedAt = datetime.utcnow()
@@ -205,44 +218,6 @@ def generate_cv(
 
     return results
 
-
-def _assemble_cv(base_latex: str, generated_body: str) -> str:
-    begin_idx = base_latex.find("\\begin{document}")
-    end_idx = base_latex.rfind("\\end{document}")
-    preamble = base_latex[:begin_idx] if begin_idx != -1 else ""
-
-    body_start = begin_idx + len("\\begin{document}") if begin_idx != -1 else 0
-    body_content = (
-        base_latex[body_start:end_idx] if end_idx != -1 else base_latex[body_start:]
-    )
-    first_section = re.search(r"\\section|\\begin\{section\}", body_content)
-    header = body_content[: first_section.start()].strip() if first_section else ""
-    header = re.sub(r".*linkedin\.com[^\n\\]*", "", header, flags=re.IGNORECASE)
-    header = re.sub(r"\n{3,}", "\n\n", header).strip()
-
-    clean_body = generated_body
-    end_doc_match = clean_body.find("\\end{document}")
-    if end_doc_match != -1:
-        clean_body = clean_body[:end_doc_match]
-    clean_body = re.sub(r"\\documentclass[^\n]*", "", clean_body)
-    clean_body = re.sub(r"\\usepackage[^\n]*", "", clean_body)
-    clean_body = re.sub(r"\\begin\{document\}", "", clean_body)
-    clean_body = re.sub(r"^```[a-z]*\n?", "", clean_body.strip(), flags=re.IGNORECASE)
-    clean_body = clean_body.rstrip("`").strip()
-
-    first_section_in_body = re.search(r"\\section", clean_body)
-    if first_section_in_body and first_section_in_body.start() > 50:
-        clean_body = clean_body[first_section_in_body.start() :]
-
-    is_empty = len(clean_body) < 100
-    if is_empty:
-        clean_body = body_content.strip()
-
-    if not preamble:
-        return generated_body
-    if is_empty:
-        return f"{preamble}\\begin{{document}}\n{clean_body}\n\\end{{document}}"
-    return f"{preamble}\\begin{{document}}\n{header}\n{clean_body}\n\\end{{document}}"
 
 
 @router.post("/screen", response_model=ScreenResult)
@@ -260,7 +235,7 @@ def screen_jobs(
         query = query.filter(Job.relevanceStatus == "unscreened")
 
     unscreened = query.with_entities(
-        Job.id, Job.title, Job.company, Job.description
+        Job.id, Job.title, Job.company, Job.description, Job.location
     ).all()
     positions = db.query(Position).filter(Position.userId == current_user.id).all()
     profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
@@ -272,6 +247,12 @@ def screen_jobs(
 
     keywords = json.loads(profile.keywords) if profile and profile.keywords else []
     languages = json.loads(profile.languages) if profile and profile.languages else []
+    deal_breakers = json.loads(profile.dealBreakers) if profile and profile.dealBreakers else []
+    preferred_locations = json.loads(profile.preferredLocations) if profile and profile.preferredLocations else []
+
+    # Send full CV — cached via Anthropic prompt caching (90% cheaper on batches 2+)
+    user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
+    base_cv = user_cv.structuredData if user_cv and user_cv.structuredData else ""
 
     jobs_payload = [
         {
@@ -279,6 +260,7 @@ def screen_jobs(
             "title": j.title,
             "company": j.company,
             "description": j.description,
+            "location": j.location,
         }
         for j in unscreened
     ]
@@ -287,10 +269,13 @@ def screen_jobs(
         "totalYearsExperience": profile.totalYearsExperience if profile else None,
         "keywords_list": keywords,
         "languages_list": languages,
+        "narrative": profile.narrative if profile else "",
+        "deal_breakers": deal_breakers,
+        "preferred_locations": preferred_locations,
     }
 
     results = claude.screen_jobs(
-        jobs_payload, [p.label for p in positions], profile_payload
+        jobs_payload, [p.label for p in positions], profile_payload, base_cv
     )
 
     by_fit: dict[str, list[str]] = {"good_fit": [], "maybe": [], "irrelevant": []}
@@ -298,11 +283,20 @@ def screen_jobs(
         fit = r.get("fit", "maybe")
         by_fit.setdefault(fit, []).append(r["id"])
 
-    for fit, ids in by_fit.items():
-        if ids:
-            db.query(Job).filter(Job.id.in_(ids), Job.userId == current_user.id).update(
-                {"relevanceStatus": fit}, synchronize_session=False
-            )
+        # Store per-job screening details
+        job_id = r.get("id")
+        if job_id:
+            update_fields = {"relevanceStatus": fit}
+            if "score" in r:
+                update_fields["screeningScore"] = str(r["score"])
+            if "reason" in r:
+                update_fields["screeningReason"] = r["reason"]
+            if "archetype" in r:
+                update_fields["archetype"] = r["archetype"]
+            db.query(Job).filter(
+                Job.id == job_id, Job.userId == current_user.id
+            ).update(update_fields, synchronize_session=False)
+
     db.commit()
 
     return ScreenResult(
@@ -310,6 +304,7 @@ def screen_jobs(
         good_fit=len(by_fit["good_fit"]),
         maybe=len(by_fit["maybe"]),
         irrelevant=len(by_fit["irrelevant"]),
+        details=results,
     )
 
 
@@ -335,19 +330,12 @@ def fetch_jobs(
     job_types = (
         json.loads(profile.jobTypes) if profile and profile.jobTypes else ["fulltime"]
     )
-
-    fetched = apify.fetch_linkedin_jobs(
-        [p.label for p in positions],
-        country_codes,
-        body.datePosted,
-        job_types,
-    )
+    position_labels = [p.label for p in positions]
 
     def _norm_url(url: str) -> str:
-        """Strip query params and normalize linkedin subdomains to linkedin.com."""
+        """Strip query params and normalize linkedin subdomains."""
         u = (url or "").split("?")[0].rstrip("/")
         parsed = urlparse(u)
-        # ae.linkedin.com / www.linkedin.com / linkedin.com → linkedin.com
         if "linkedin.com" in parsed.netloc:
             u = f"https://linkedin.com{parsed.path}"
         return u
@@ -355,24 +343,75 @@ def fetch_jobs(
     existing_rows = db.query(Job.url).filter(Job.userId == current_user.id).all()
     existing_urls = {_norm_url(r.url or "") for r in existing_rows}
 
-    new_jobs = [j for j in fetched if _norm_url(j.url or "") not in existing_urls]
+    total_inserted = 0
+    total_skipped = 0
+    by_source = {}
 
-    for j in new_jobs:
-        db.add(
-            Job(
-                userId=current_user.id,
-                title=j.title,
-                company=j.company,
-                location=j.location,
-                description=j.description,
-                url=_norm_url(j.url or ""),
-                salary=j.salary,
-                jobType=j.job_type or j.seniority_level,
-                agentStatus="pending",
-                applicationStatus="new",
-                fetchedAt=datetime.utcnow(),
+    # --- Source 1: LinkedIn via Apify ---
+    if "linkedin" in body.sources:
+        try:
+            fetched = apify.fetch_linkedin_jobs(
+                position_labels, country_codes, body.datePosted, job_types,
             )
-        )
+            new_linkedin = [j for j in fetched if _norm_url(j.url or "") not in existing_urls]
+            for j in new_linkedin:
+                norm = _norm_url(j.url or "")
+                existing_urls.add(norm)
+                db.add(Job(
+                    userId=current_user.id,
+                    title=j.title,
+                    company=j.company,
+                    location=j.location,
+                    description=j.description,
+                    url=norm,
+                    salary=j.salary,
+                    jobType=j.job_type or j.seniority_level,
+                    source="linkedin",
+                    agentStatus="pending",
+                    applicationStatus="new",
+                    fetchedAt=datetime.utcnow(),
+                ))
+            by_source["linkedin"] = len(new_linkedin)
+            total_inserted += len(new_linkedin)
+            total_skipped += len(fetched) - len(new_linkedin)
+        except Exception as e:
+            by_source["linkedin"] = f"error: {str(e)[:100]}"
+
+    # --- Source 2: Greenhouse API (free) ---
+    if "greenhouse" in body.sources:
+        try:
+            # Use position labels as positive keywords for title filtering
+            gh_jobs = greenhouse.fetch_greenhouse_jobs(
+                companies=None,  # uses default 28 companies
+                positive_keywords=position_labels,
+                negative_keywords=[],
+                preferred_locations=country_codes,
+            )
+            new_gh = [j for j in gh_jobs if _norm_url(j.url or "") not in existing_urls]
+            for j in new_gh:
+                norm = _norm_url(j.url or "")
+                existing_urls.add(norm)
+                db.add(Job(
+                    userId=current_user.id,
+                    title=j.title,
+                    company=j.company,
+                    location=j.location,
+                    description=j.description,
+                    url=norm,
+                    source="greenhouse",
+                    agentStatus="pending",
+                    applicationStatus="new",
+                    fetchedAt=datetime.utcnow(),
+                ))
+            by_source["greenhouse"] = len(new_gh)
+            total_inserted += len(new_gh)
+            total_skipped += len(gh_jobs) - len(new_gh)
+        except Exception as e:
+            by_source["greenhouse"] = f"error: {str(e)[:100]}"
 
     db.commit()
-    return SyncResult(inserted=len(new_jobs), skipped=len(fetched) - len(new_jobs))
+    return SyncResult(
+        inserted=total_inserted,
+        skipped=total_skipped,
+        bySource=by_source,
+    )

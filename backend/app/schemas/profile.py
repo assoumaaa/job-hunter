@@ -17,6 +17,8 @@ class ProfileOut(BaseModel):
     languages: Optional[str] = None
     keywords: Optional[str] = None
     jobTypes: Optional[str] = None
+    narrative: Optional[str] = None
+    dealBreakers: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -30,6 +32,8 @@ class ProfileUpdateRequest(BaseModel):
     currentLocation: Optional[str] = None
     noticePeriod: Optional[str] = None
     languages: Optional[str] = None
+    narrative: Optional[str] = None
+    dealBreakers: Optional[str] = None
 
 
 class JobSettingsUpdateRequest(BaseModel):

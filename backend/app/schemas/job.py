@@ -17,6 +17,9 @@ class JobOut(BaseModel):
     source: Optional[str] = None
     fetchedAt: Optional[datetime] = None
     relevanceStatus: str
+    archetype: Optional[str] = None
+    screeningScore: Optional[str] = None
+    screeningReason: Optional[str] = None
     agentStatus: str
     atsScore: Optional[int] = None
     atsBreakdown: Optional[str] = None
@@ -61,12 +64,15 @@ class ScreenResult(BaseModel):
     good_fit: int
     maybe: int
     irrelevant: int
+    details: Optional[List[Dict[str, Any]]] = None  # per-job score/reason/archetype
 
 
 class SyncRequest(BaseModel):
     datePosted: str = "week"
+    sources: List[str] = ["linkedin", "greenhouse"]  # which sources to fetch from
 
 
 class SyncResult(BaseModel):
     inserted: int
     skipped: int
+    bySource: Optional[Dict[str, Any]] = None  # e.g. {"linkedin": 5, "greenhouse": 12}

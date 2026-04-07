@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{NAME}} -- CV</title>
+<style>
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  body {
+    font-family: 'Times New Roman', 'DejaVu Serif', Georgia, serif;
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #000;
+    background: #fff;
+  }
+
+  .page {
+    width: 100%;
+    max-width: {{PAGE_WIDTH}};
+    margin: 0 auto;
+  }
+
+  a {
+    color: #000;
+    text-decoration: none;
+  }
+
+  /* === HEADER === */
+  .header {
+    margin-bottom: 6pt;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+
+  .header-left h1 {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #000;
+    margin-bottom: 1pt;
+  }
+
+  .header-left .subtitle {
+    font-size: 9pt;
+    color: #000;
+  }
+
+  .header-right {
+    text-align: right;
+    font-size: 9pt;
+    color: #000;
+  }
+
+  /* === SECTIONS === */
+  .section {
+    margin-bottom: 6pt;
+  }
+
+  .section-title {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #000;
+    border-bottom: 1px solid #000;
+    padding-bottom: 1pt;
+    margin-bottom: 4pt;
+  }
+
+  /* === SUMMARY === */
+  .summary-text {
+    font-size: 10pt;
+    line-height: 1.4;
+  }
+
+  /* === SKILLS === */
+  .skill-line {
+    font-size: 10pt;
+    margin-bottom: 1pt;
+  }
+
+  .skills-list {
+    padding-left: 18pt;
+    list-style-type: disc;
+    margin: 0;
+  }
+
+  .skills-list li {
+    font-size: 10pt;
+    margin-bottom: 1pt;
+  }
+
+  .skills-list .cat, .skill-line .cat {
+    font-weight: 700;
+  }
+
+  /* === EXPERIENCE === */
+  .job {
+    margin-bottom: 6pt;
+  }
+
+  .job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .job-company {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #000;
+  }
+
+  .job-location {
+    font-size: 10pt;
+    color: #000;
+  }
+
+  .job-sub {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .job-role {
+    font-size: 10pt;
+    font-style: italic;
+    color: #000;
+  }
+
+  .job-period {
+    font-size: 10pt;
+    font-style: italic;
+    color: #000;
+    white-space: nowrap;
+  }
+
+  .job ul {
+    padding-left: 18pt;
+    margin-top: 2pt;
+    list-style-type: disc;
+  }
+
+  .job li {
+    font-size: 10pt;
+    line-height: 1.35;
+    margin-bottom: 1pt;
+  }
+
+  /* === EDUCATION === */
+  .edu-item {
+    margin-bottom: 3pt;
+  }
+
+  .edu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .edu-school {
+    font-size: 10pt;
+    font-weight: 700;
+  }
+
+  .edu-location {
+    font-size: 10pt;
+  }
+
+  .edu-sub {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .edu-degree {
+    font-size: 10pt;
+    font-style: italic;
+  }
+
+  .edu-year {
+    font-size: 10pt;
+    font-style: italic;
+  }
+
+  .edu-desc {
+    font-size: 9pt;
+    color: #333;
+  }
+
+  /* === PROJECTS === */
+  .project {
+    margin-bottom: 4pt;
+  }
+
+  .project-title {
+    font-size: 10pt;
+    font-weight: 700;
+  }
+
+  .project-badge {
+    font-size: 9pt;
+    font-weight: 400;
+    margin-left: 4pt;
+  }
+
+  .project-desc {
+    font-size: 10pt;
+  }
+
+  .project-tech {
+    font-size: 9pt;
+    color: #333;
+    font-style: italic;
+  }
+
+  /* === CERTIFICATIONS === */
+  .cert-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 2pt;
+  }
+
+  .cert-title {
+    font-size: 10pt;
+  }
+
+  .cert-year {
+    font-size: 10pt;
+    font-style: italic;
+  }
+
+  /* === COMPETENCIES (shown as bullet list) === */
+  .competencies-list {
+    padding-left: 18pt;
+    list-style-type: disc;
+  }
+
+  .competencies-list li {
+    font-size: 10pt;
+    margin-bottom: 1pt;
+  }
+
+  /* === LANGUAGES === */
+  .languages-line {
+    font-size: 10pt;
+  }
+
+  .languages-line strong {
+    font-weight: 700;
+  }
+
+  /* === PRINT === */
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { padding: 0; }
+  }
+
+  .avoid-break { break-inside: avoid; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER: two-column like LaTeX -->
+  <div class="header">
+    <div class="header-top">
+      <div class="header-left">
+        <h1>{{NAME}}</h1>
+        <div class="subtitle">{{HEADER_SUBTITLE}}</div>
+      </div>
+      <div class="header-right">
+        {{HEADER_RIGHT}}
+      </div>
+    </div>
+  </div>
+
+  {{BLOCK_SUMMARY}}
+  {{BLOCK_SKILLS}}
+  {{BLOCK_COMPETENCIES}}
+  {{BLOCK_EXPERIENCE}}
+  {{BLOCK_PROJECTS}}
+  {{BLOCK_EDUCATION}}
+  {{BLOCK_CERTIFICATIONS}}
+  {{BLOCK_LANGUAGES}}
+
+</div>
+</body>
+</html>
