@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev": "concurrently --names \"api,web,tex\" --prefix-colors \"cyan,magenta,yellow\" \"npm run api\" \"npm run web\" \"npm run tex\"",
+    "api": "cd backend && poetry run uvicorn app.main:app --reload --port 8000",
+    "web": "cd frontend && bun run dev",
+    "tex": "node '../latex-service/index.js'",
+    "build": "cd frontend && bun run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
@@ -36,6 +37,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "dotenv": "^17.3.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
