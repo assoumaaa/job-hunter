@@ -29,7 +29,7 @@ from ..schemas.job import (
     TweakRequest,
     TweakResponse,
 )
-from ..services import claude, apify, greenhouse, job_extractor
+from ..services import claude, apify, job_extractor
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -126,10 +126,18 @@ def add_manual_job(
     # Deduplicate by URL if provided
     if body.url:
         parsed = urlparse(body.url.split("?")[0].rstrip("/"))
-        norm = f"https://linkedin.com{parsed.path}" if "linkedin.com" in parsed.netloc else parsed.geturl()
-        existing = db.query(Job).filter(Job.userId == current_user.id, Job.url == norm).first()
+        norm = (
+            f"https://linkedin.com{parsed.path}"
+            if "linkedin.com" in parsed.netloc
+            else parsed.geturl()
+        )
+        existing = (
+            db.query(Job).filter(Job.userId == current_user.id, Job.url == norm).first()
+        )
         if existing:
-            raise HTTPException(status_code=409, detail="A job with this URL already exists.")
+            raise HTTPException(
+                status_code=409, detail="A job with this URL already exists."
+            )
     else:
         norm = None
 
@@ -162,7 +170,9 @@ def generate_cv(
 
     user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
     if not user_cv or not user_cv.structuredData:
-        raise HTTPException(status_code=400, detail="No CV found. Please upload your CV first.")
+        raise HTTPException(
+            status_code=400, detail="No CV found. Please upload your CV first."
+        )
 
     base_cv_data = json.loads(user_cv.structuredData)
     profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
@@ -189,14 +199,20 @@ def generate_cv(
             + (f"\n- Key skills/keywords to emphasize: {kw_str}" if kw_str else "")
         )
 
-    candidate_name = (profile.fullName if profile else None) or current_user.name or "Candidate"
+    candidate_name = (
+        (profile.fullName if profile else None) or current_user.name or "Candidate"
+    )
     linkedin_url = profile.linkedinUrl if profile else None
     github_url = profile.githubUrl if profile else None
     narrative = profile.narrative if profile else None
 
     results = []
     for job_id in body.jobIds:
-        job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
+        job = (
+            db.query(Job)
+            .filter(Job.id == job_id, Job.userId == current_user.id)
+            .first()
+        )
         if not job:
             continue
 
@@ -204,7 +220,7 @@ def generate_cv(
         db.commit()
 
         archetype = job.archetype
-        candidate_years = (profile.totalYearsExperience if profile else None)
+        candidate_years = profile.totalYearsExperience if profile else None
 
         # Status callback flips the job to "reviewing" once we start iterating
         def _on_pass(pass_num, _score, _job=job):
@@ -257,7 +273,6 @@ def generate_cv(
     return results
 
 
-
 @router.post("/screen", response_model=ScreenResult)
 def screen_jobs(
     body: ScreenRequest,
@@ -285,8 +300,14 @@ def screen_jobs(
 
     keywords = json.loads(profile.keywords) if profile and profile.keywords else []
     languages = json.loads(profile.languages) if profile and profile.languages else []
-    deal_breakers = json.loads(profile.dealBreakers) if profile and profile.dealBreakers else []
-    preferred_locations = json.loads(profile.preferredLocations) if profile and profile.preferredLocations else []
+    deal_breakers = (
+        json.loads(profile.dealBreakers) if profile and profile.dealBreakers else []
+    )
+    preferred_locations = (
+        json.loads(profile.preferredLocations)
+        if profile and profile.preferredLocations
+        else []
+    )
 
     # Send full CV — cached via Anthropic prompt caching (90% cheaper on batches 2+)
     user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
@@ -381,77 +402,37 @@ def fetch_jobs(
     existing_rows = db.query(Job.url).filter(Job.userId == current_user.id).all()
     existing_urls = {_norm_url(r.url or "") for r in existing_rows}
 
-    total_inserted = 0
-    total_skipped = 0
-    by_source = {}
-
-    # --- Source 1: LinkedIn via Apify ---
-    if "linkedin" in body.sources:
-        try:
-            fetched = apify.fetch_linkedin_jobs(
-                position_labels, country_codes, body.datePosted, job_types,
+    fetched = apify.fetch_linkedin_jobs(
+        position_labels,
+        country_codes,
+        body.datePosted,
+        job_types,
+    )
+    new_jobs = [j for j in fetched if _norm_url(j.url or "") not in existing_urls]
+    for j in new_jobs:
+        norm = _norm_url(j.url or "")
+        existing_urls.add(norm)
+        db.add(
+            Job(
+                userId=current_user.id,
+                title=j.title,
+                company=j.company,
+                location=j.location,
+                description=j.description,
+                url=norm,
+                salary=j.salary,
+                jobType=j.job_type or j.seniority_level,
+                source="linkedin",
+                agentStatus="pending",
+                applicationStatus="new",
+                fetchedAt=datetime.utcnow(),
             )
-            new_linkedin = [j for j in fetched if _norm_url(j.url or "") not in existing_urls]
-            for j in new_linkedin:
-                norm = _norm_url(j.url or "")
-                existing_urls.add(norm)
-                db.add(Job(
-                    userId=current_user.id,
-                    title=j.title,
-                    company=j.company,
-                    location=j.location,
-                    description=j.description,
-                    url=norm,
-                    salary=j.salary,
-                    jobType=j.job_type or j.seniority_level,
-                    source="linkedin",
-                    agentStatus="pending",
-                    applicationStatus="new",
-                    fetchedAt=datetime.utcnow(),
-                ))
-            by_source["linkedin"] = len(new_linkedin)
-            total_inserted += len(new_linkedin)
-            total_skipped += len(fetched) - len(new_linkedin)
-        except Exception as e:
-            by_source["linkedin"] = f"error: {str(e)[:100]}"
-
-    # --- Source 2: Greenhouse API (free) ---
-    if "greenhouse" in body.sources:
-        try:
-            # Use position labels as positive keywords for title filtering
-            gh_jobs = greenhouse.fetch_greenhouse_jobs(
-                companies=None,  # uses default 28 companies
-                positive_keywords=position_labels,
-                negative_keywords=[],
-                preferred_locations=country_codes,
-            )
-            new_gh = [j for j in gh_jobs if _norm_url(j.url or "") not in existing_urls]
-            for j in new_gh:
-                norm = _norm_url(j.url or "")
-                existing_urls.add(norm)
-                db.add(Job(
-                    userId=current_user.id,
-                    title=j.title,
-                    company=j.company,
-                    location=j.location,
-                    description=j.description,
-                    url=norm,
-                    source="greenhouse",
-                    agentStatus="pending",
-                    applicationStatus="new",
-                    fetchedAt=datetime.utcnow(),
-                ))
-            by_source["greenhouse"] = len(new_gh)
-            total_inserted += len(new_gh)
-            total_skipped += len(gh_jobs) - len(new_gh)
-        except Exception as e:
-            by_source["greenhouse"] = f"error: {str(e)[:100]}"
+        )
 
     db.commit()
     return SyncResult(
-        inserted=total_inserted,
-        skipped=total_skipped,
-        bySource=by_source,
+        inserted=len(new_jobs),
+        skipped=len(fetched) - len(new_jobs),
     )
 
 
@@ -480,11 +461,7 @@ def tweak_job_doc(
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is empty")
 
-    job = (
-        db.query(Job)
-        .filter(Job.id == job_id, Job.userId == current_user.id)
-        .first()
-    )
+    job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
@@ -501,7 +478,9 @@ def tweak_job_doc(
         job.generatedCv = json.dumps(updated)
     else:  # cl
         if not job.generatedCl:
-            raise HTTPException(status_code=400, detail="Job has no generated cover letter yet")
+            raise HTTPException(
+                status_code=400, detail="Job has no generated cover letter yet"
+            )
         if not job.originalCl:
             job.originalCl = job.generatedCl
         updated_text = claude.apply_cl_tweak(job.generatedCl, base_cv, prompt)
@@ -526,16 +505,14 @@ def reset_job_tweaks(
     current_user: User = Depends(get_current_user),
 ):
     """Restore generatedCv / generatedCl from their pre-tweak snapshots."""
-    job = (
-        db.query(Job)
-        .filter(Job.id == job_id, Job.userId == current_user.id)
-        .first()
-    )
+    job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
     if not (job.originalCv or job.originalCl):
-        raise HTTPException(status_code=400, detail="Nothing to reset — this job has not been tweaked.")
+        raise HTTPException(
+            status_code=400, detail="Nothing to reset — this job has not been tweaked."
+        )
 
     if job.originalCv:
         job.generatedCv = job.originalCv

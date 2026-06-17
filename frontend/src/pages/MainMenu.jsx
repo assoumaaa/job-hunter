@@ -66,8 +66,8 @@ export default function MainMenu() {
 				</div>
 				{!collapsed && (
 					<div className="flex flex-col leading-none">
-						<span className="text-[13px] font-semibold text-zinc-900 tracking-tight">Job Hunter</span>
-						<span className="text-[10px] font-medium text-zinc-400 mt-0.5">workspace</span>
+						<span className="text-[15px] font-semibold text-zinc-900 tracking-tight">Job Hunter</span>
+						<span className="text-[11px] font-medium text-zinc-400 mt-0.5">workspace</span>
 					</div>
 				)}
 			</div>
@@ -75,7 +75,7 @@ export default function MainMenu() {
 			{/* Nav */}
 			<nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
 				{!collapsed && (
-					<div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+					<div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
 						Workspace
 					</div>
 				)}
@@ -83,7 +83,7 @@ export default function MainMenu() {
 					<NavLink key={to} to={to} title={collapsed ? label : undefined}>
 						{({ isActive }) => (
 							<div
-								className={`group flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] font-medium transition-all duration-100 ${
+								className={`group flex items-center gap-2.5 px-2.5 h-10 rounded-lg text-[14px] font-medium transition-all duration-100 ${
 									collapsed ? "justify-center" : ""
 								} ${
 									isActive
@@ -92,7 +92,7 @@ export default function MainMenu() {
 								}`}
 							>
 								<Icon
-									className={`h-[16px] w-[16px] flex-shrink-0 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-700"}`}
+									className={`h-[18px] w-[18px] flex-shrink-0 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-700"}`}
 								/>
 								{!collapsed && <span className="truncate">{label}</span>}
 								{!collapsed && isActive && (
@@ -120,7 +120,7 @@ export default function MainMenu() {
 					)}
 					{!collapsed && (
 						<div className="flex-1 min-w-0">
-							<div className="text-[12px] font-semibold text-zinc-900 truncate leading-tight">
+							<div className="text-[13px] font-semibold text-zinc-900 truncate leading-tight">
 								{displayName}
 							</div>
 							{email && (
@@ -134,9 +134,9 @@ export default function MainMenu() {
 					<button
 						onClick={() => signOut()}
 						title="Sign out"
-						className={`${collapsed ? "w-full" : "flex-1"} h-8 rounded-md flex items-center justify-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer`}
+						className={`${collapsed ? "w-full" : "flex-1"} h-9 rounded-md flex items-center justify-center gap-1.5 text-[13px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer`}
 					>
-						<LogOut className="h-3.5 w-3.5" />
+						<LogOut className="h-4 w-4" />
 						{!collapsed && "Sign out"}
 					</button>
 					{!collapsed && (

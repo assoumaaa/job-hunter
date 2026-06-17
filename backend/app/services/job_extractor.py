@@ -6,8 +6,7 @@ Strategy
     use LinkedIn's public guest endpoint
     `/jobs-guest/jobs/api/jobPosting/<id>` which serves the posting as a
     standalone HTML fragment without auth.
-2.  Greenhouse `boards.greenhouse.io/.../jobs/<id>` URLs: fetched directly.
-3.  Anything else: fetched directly with a browser-like User-Agent.
+2.  Anything else: fetched directly with a browser-like User-Agent.
 
 In every case the HTML is stripped of scripts/styles and shipped to Claude
 Haiku to produce a structured `{title, company, location, description}`
@@ -71,8 +70,6 @@ def _detect_source(url: str) -> str:
     host = urlparse(url).netloc.lower()
     if "linkedin.com" in host:
         return "linkedin"
-    if "greenhouse.io" in host:
-        return "greenhouse"
     if "indeed." in host:
         return "indeed"
     if "wellfound.com" in host or "angel.co" in host:
@@ -98,9 +95,7 @@ def _fetch(url: str) -> str:
 
 
 def _fetch_linkedin_posting(job_id: str) -> str:
-    return _fetch(
-        f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}"
-    )
+    return _fetch(f"https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{job_id}")
 
 
 # ---------------------------------------------------------------------------

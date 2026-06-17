@@ -7,25 +7,26 @@ import { Input } from "components/ui/input";
 import { Modal } from "components/ui/modal";
 
 const SOURCE_OPTIONS = [
-	{ value: "linkedin",   label: "LinkedIn"   },
-	{ value: "greenhouse", label: "Greenhouse" },
-	{ value: "indeed",     label: "Indeed"     },
-	{ value: "wellfound",  label: "Wellfound"  },
-	{ value: "other",      label: "Other"      },
+	{ value: "linkedin", label: "LinkedIn" },
+	{ value: "indeed", label: "Indeed" },
+	{ value: "wellfound", label: "Wellfound" },
+	{ value: "other", label: "Other" },
 ];
 
 function Field({ label, required, children }) {
 	return (
 		<label className="flex flex-col gap-1.5">
 			<span className="text-[11px] font-medium text-zinc-600">
-				{label}{required && <span className="text-red-500"> *</span>}
+				{label}
+				{required && <span className="text-red-500"> *</span>}
 			</span>
 			{children}
 		</label>
 	);
 }
 
-const selectCls = "flex h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 hover:border-zinc-300 focus-visible:outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/5 cursor-pointer";
+const selectCls =
+	"flex h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 hover:border-zinc-300 focus-visible:outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/5 cursor-pointer";
 
 const EMPTY = { title: "", company: "", url: "", location: "", source: "linkedin", description: "" };
 
@@ -107,7 +108,9 @@ export default function AddJobDialog({ onClose, onAdded }) {
 			width={560}
 			footer={
 				<>
-					<Button variant="subtle" size="sm" onClick={onClose}>Cancel</Button>
+					<Button variant="subtle" size="sm" onClick={onClose}>
+						Cancel
+					</Button>
 					<Button variant="primary" size="sm" onClick={handleSubmit} disabled={!canSubmit || submitting}>
 						{submitting ? "Adding…" : "Add job"}
 					</Button>
@@ -126,30 +129,36 @@ export default function AddJobDialog({ onClose, onAdded }) {
 							<LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
 							<Input
 								value={extractUrl}
-								onChange={(e) => { setExtractUrl(e.target.value); setExtractError(null); setExtracted(false); }}
+								onChange={(e) => {
+									setExtractUrl(e.target.value);
+									setExtractError(null);
+									setExtracted(false);
+								}}
 								onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleExtract())}
 								placeholder="https://www.linkedin.com/jobs/view/…"
 								className="pl-7"
 							/>
 						</div>
 						<Button variant="primary" size="default" onClick={handleExtract} disabled={!canExtract}>
-							{extracting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+							{extracting ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<Sparkles className="h-3.5 w-3.5" />
+							)}
 							{extracting ? "Extracting…" : "Extract"}
 						</Button>
 					</div>
-					{extractError && (
-						<p className="text-[11.5px] text-red-600 m-0">{extractError}</p>
-					)}
+					{extractError && <p className="text-[11.5px] text-red-600 m-0">{extractError}</p>}
 					{extracted && !extractError && (
-						<p className="text-[11.5px] text-emerald-700 m-0">
-							✓ Filled below — review and click Add job.
-						</p>
+						<p className="text-[11.5px] text-emerald-700 m-0">✓ Filled below — review and click Add job.</p>
 					)}
 				</div>
 
 				<div className="flex items-center gap-3">
 					<div className="h-px flex-1 bg-zinc-200" />
-					<span className="text-[10.5px] font-medium text-zinc-400 uppercase tracking-wider">or fill manually</span>
+					<span className="text-[10.5px] font-medium text-zinc-400 uppercase tracking-wider">
+						or fill manually
+					</span>
 					<div className="h-px flex-1 bg-zinc-200" />
 				</div>
 
@@ -168,7 +177,11 @@ export default function AddJobDialog({ onClose, onAdded }) {
 					</Field>
 					<Field label="Source">
 						<select value={form.source} onChange={set("source")} className={selectCls}>
-							{SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+							{SOURCE_OPTIONS.map((o) => (
+								<option key={o.value} value={o.value}>
+									{o.label}
+								</option>
+							))}
 						</select>
 					</Field>
 				</div>

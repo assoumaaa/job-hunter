@@ -34,10 +34,7 @@ const gridTheme = themeQuartz.withParams({
 });
 
 const selectCls =
-	"h-8 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 cursor-pointer disabled:opacity-40 hover:border-zinc-300 transition-colors";
-
-const checkboxCls =
-	"h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-1 focus:ring-indigo-400 focus:ring-offset-0 cursor-pointer";
+	"h-9 rounded-md border border-zinc-200 bg-white px-2.5 text-[13px] font-medium text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 cursor-pointer disabled:opacity-40 hover:border-zinc-300 transition-colors";
 
 export default function Jobs() {
 	const [jobs, setJobs] = useState([]);
@@ -45,8 +42,6 @@ export default function Jobs() {
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
 	const [datePosted, setDatePosted] = useState("week");
-	const [fetchLinkedin, setFetchLinkedin] = useState(true);
-	const [fetchGreenhouse, setFetchGreenhouse] = useState(true);
 	const [filterCompany, setFilterCompany] = useState("");
 	const [filterTitle, setFilterTitle] = useState("");
 	const [viewFilter, setViewFilter] = useState("to_apply");
@@ -59,7 +54,9 @@ export default function Jobs() {
 	const navigate = useNavigate();
 
 	const jobsRef = useRef([]);
-	useEffect(() => { jobsRef.current = jobs; }, [jobs]);
+	useEffect(() => {
+		jobsRef.current = jobs;
+	}, [jobs]);
 
 	const filteredJobs = useMemo(
 		() =>
@@ -111,7 +108,10 @@ export default function Jobs() {
 				cellRenderer: ({ value, data }) =>
 					screeningIds.has(data.id) ? (
 						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-medium">
-							<span className="h-1.5 w-1.5 rounded-full bg-zinc-400" style={{ animation: "pulse 1.2s ease-in-out infinite" }} />
+							<span
+								className="h-1.5 w-1.5 rounded-full bg-zinc-400"
+								style={{ animation: "pulse 1.2s ease-in-out infinite" }}
+							/>
 							Screening
 						</span>
 					) : (
@@ -136,18 +136,13 @@ export default function Jobs() {
 								<svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" fill="#0A66C2">
 									<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
 								</svg>
-							) : data.source === "greenhouse" ? (
-								<svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" fill="#3B8427">
-									<circle cx="12" cy="12" r="10" />
-									<text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text>
-								</svg>
 							) : (
-								<span className="w-3 h-3 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 shrink-0">M</span>
+								<span className="w-3 h-3 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 shrink-0">
+									M
+								</span>
 							)}
 							<span className="truncate">{data.company}</span>
-							{data.location && (
-								<span className="text-zinc-300">· {data.location.split(",")[0]}</span>
-							)}
+							{data.location && <span className="text-zinc-300">· {data.location.split(",")[0]}</span>}
 						</div>
 						{data.url ? (
 							<a
@@ -205,7 +200,10 @@ export default function Jobs() {
 					return (
 						<div className="flex items-center gap-1.5 h-full">
 							{isGenerating && (
-								<span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" style={{ animation: "pulse 1.2s ease-in-out infinite" }} />
+								<span
+									className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"
+									style={{ animation: "pulse 1.2s ease-in-out infinite" }}
+								/>
 							)}
 							<DocChip value={data.generatedCv} label="CV" contact={contact} />
 							<DocChip value={data.generatedCl} label="CL" contact={contact} />
@@ -237,22 +235,13 @@ export default function Jobs() {
 	);
 
 	const handleFetch = () => {
-		const sources = [];
-		if (fetchLinkedin) sources.push("linkedin");
-		if (fetchGreenhouse) sources.push("greenhouse");
-		if (!sources.length) return;
-
 		callApi("/jobs/fetch", {
 			method: "POST",
-			json: { datePosted, sources },
+			json: { datePosted },
 			alias: "fetchJobs",
 			error: "Failed to fetch jobs",
 			onSuccess: (fetchData) => {
-				const src = fetchData.bySource || {};
-				const parts = Object.entries(src)
-					.filter(([, v]) => typeof v === "number" && v > 0)
-					.map(([k, v]) => `${v} from ${k}`);
-				const msg = parts.length ? `${fetchData.inserted} new jobs (${parts.join(", ")})` : "No new jobs";
+				const msg = fetchData.inserted > 0 ? `${fetchData.inserted} new jobs` : "No new jobs";
 				enqueueSnackbar(msg, { variant: fetchData.inserted > 0 ? "success" : "default" });
 
 				if (fetchData.inserted > 0) {
@@ -411,13 +400,23 @@ export default function Jobs() {
 							Add job
 						</Button>
 						{toRegen.length > 0 && (
-							<Button variant="outline" size="sm" onClick={() => handleGenerate(toRegen)} disabled={loading?.generateJobs}>
+							<Button
+								variant="outline"
+								size="sm"
+								onClick={() => handleGenerate(toRegen)}
+								disabled={loading?.generateJobs}
+							>
 								<RotateCcw className="h-3.5 w-3.5" />
 								{loading?.generateJobs ? "Generating…" : `Regenerate (${toRegen.length})`}
 							</Button>
 						)}
 						{(selectedIds.length === 0 || toGenerate.length > 0) && (
-							<Button variant="primary" size="sm" onClick={() => handleGenerate(toGenerate)} disabled={loading?.generateJobs || !selectedIds.length}>
+							<Button
+								variant="primary"
+								size="sm"
+								onClick={() => handleGenerate(toGenerate)}
+								disabled={loading?.generateJobs || !selectedIds.length}
+							>
 								<BoltIcon className="h-3.5 w-3.5" />
 								{loading?.generateJobs
 									? "Generating…"
@@ -438,7 +437,7 @@ export default function Jobs() {
 						placeholder="Company"
 						value={filterCompany}
 						onChange={(e) => setFilterCompany(e.target.value)}
-						className="w-36 h-8 text-xs pl-7"
+						className="w-36 pl-7"
 					/>
 				</div>
 				<div className="relative">
@@ -447,7 +446,7 @@ export default function Jobs() {
 						placeholder="Job title"
 						value={filterTitle}
 						onChange={(e) => setFilterTitle(e.target.value)}
-						className="w-44 h-8 text-xs pl-7"
+						className="w-44 pl-7"
 					/>
 				</div>
 				<select className={selectCls} value={viewFilter} onChange={(e) => setViewFilter(e.target.value)}>
@@ -461,8 +460,12 @@ export default function Jobs() {
 					<Button
 						variant="ghost"
 						size="sm"
-						className="h-8 text-xs text-zinc-500 hover:text-zinc-800"
-						onClick={() => { setFilterCompany(""); setFilterTitle(""); setViewFilter("to_apply"); }}
+						className="text-zinc-500 hover:text-zinc-800"
+						onClick={() => {
+							setFilterCompany("");
+							setFilterTitle("");
+							setViewFilter("to_apply");
+						}}
 					>
 						Reset
 					</Button>
@@ -482,44 +485,21 @@ export default function Jobs() {
 							<option value="week">Last week</option>
 							<option value="month">Last month</option>
 						</select>
-						<label className="flex items-center gap-1.5 text-[12px] text-zinc-600 cursor-pointer select-none px-1">
-							<input
-								type="checkbox"
-								checked={fetchLinkedin}
-								onChange={(e) => setFetchLinkedin(e.target.checked)}
-								className={checkboxCls}
-							/>
-							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2">
-								<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-							</svg>
-						</label>
-						<label className="flex items-center gap-1.5 text-[12px] text-zinc-600 cursor-pointer select-none px-1">
-							<input
-								type="checkbox"
-								checked={fetchGreenhouse}
-								onChange={(e) => setFetchGreenhouse(e.target.checked)}
-								className={checkboxCls}
-							/>
-							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#3B8427">
-								<circle cx="12" cy="12" r="10" />
-								<text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text>
-							</svg>
-						</label>
-						<Button
-							variant="outline"
-							size="sm"
-							className="h-8"
-							onClick={handleFetch}
-							disabled={loading?.fetchJobs || (!fetchLinkedin && !fetchGreenhouse)}
-						>
-							<RefreshCw className={`h-3.5 w-3.5 ${loading?.fetchJobs ? "animate-spin" : ""}`} />
+						<Button variant="outline" size="sm" onClick={handleFetch} disabled={loading?.fetchJobs}>
+							{loading?.fetchJobs ? (
+								<RefreshCw className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2">
+									<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+								</svg>
+							)}
 							{loading?.fetchJobs ? "Fetching…" : "Fetch"}
 						</Button>
 					</>
 				)}
 
 				{screenable > 0 && (
-					<Button variant="outline" size="sm" className="h-8" onClick={handleScreen} disabled={loading?.screenJobs}>
+					<Button variant="outline" size="sm" onClick={handleScreen} disabled={loading?.screenJobs}>
 						<ScanSearch className="h-3.5 w-3.5" />
 						{loading?.screenJobs ? "Screening…" : `Screen (${screenable})`}
 					</Button>

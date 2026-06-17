@@ -105,10 +105,8 @@ class ExtractedJobResponse(BaseModel):
 
 class SyncRequest(BaseModel):
     datePosted: str = "week"
-    sources: List[str] = ["linkedin", "greenhouse"]  # which sources to fetch from
 
 
 class SyncResult(BaseModel):
     inserted: int
     skipped: int
-    bySource: Optional[Dict[str, Any]] = None  # e.g. {"linkedin": 5, "greenhouse": 12}
