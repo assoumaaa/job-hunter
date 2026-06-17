@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
@@ -30,8 +32,15 @@ def _ensure_jobs_tweak_columns() -> None:
             conn.execute(text('ALTER TABLE jobs ADD COLUMN "originalCl" TEXT'))
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    _ensure_jobs_tweak_columns()
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Job Hunter API", version="1.0.0")
+    app = FastAPI(title="Job Hunter API", version="1.0.0", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -48,11 +57,6 @@ def create_app() -> FastAPI:
     app.include_router(profile_router)
     app.include_router(job_settings_router)
     app.include_router(cv_router)
-
-    @app.on_event("startup")
-    def on_startup():
-        Base.metadata.create_all(bind=engine)
-        _ensure_jobs_tweak_columns()
 
     @app.get("/health")
     def health():
