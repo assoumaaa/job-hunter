@@ -1,15 +1,26 @@
-import { Briefcase, ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, ListChecks, LogOut, Sparkles, User } from "lucide-react";
+import {
+	Briefcase,
+	ChevronsLeft,
+	ChevronsRight,
+	FileText,
+	LayoutDashboard,
+	ListChecks,
+	LogOut,
+	User,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { NavLink } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 
+import BrandMark from "../components/BrandMark";
+
 const NAV = [
-	{ to: "/home",      label: "Overview",  Icon: LayoutDashboard },
-	{ to: "/jobs",      label: "Jobs",      Icon: Briefcase },
+	{ to: "/home", label: "Overview", Icon: LayoutDashboard },
+	{ to: "/jobs", label: "Jobs", Icon: Briefcase },
 	{ to: "/positions", label: "Targeting", Icon: ListChecks },
-	{ to: "/cv",        label: "My CV",     Icon: FileText },
-	{ to: "/profile",   label: "Profile",   Icon: User },
+	{ to: "/cv", label: "My CV", Icon: FileText },
+	{ to: "/profile", label: "Profile", Icon: User },
 ];
 
 const STORAGE_KEY = "jh.menu.collapsed";
@@ -18,16 +29,27 @@ export default function MainMenu() {
 	const { signOut } = useClerk();
 	const { user } = useUser();
 	const [collapsed, setCollapsed] = useState(() => {
-		try { return localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
+		try {
+			return localStorage.getItem(STORAGE_KEY) === "1";
+		} catch {
+			return false;
+		}
 	});
 
 	useEffect(() => {
-		try { localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0"); } catch {}
+		try {
+			localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
+		} catch {}
 	}, [collapsed]);
 
 	const initials = (user?.fullName || user?.primaryEmailAddress?.emailAddress || "?")
-		.split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase();
-	const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "Account";
+		.split(/\s+/)
+		.map((s) => s[0])
+		.slice(0, 2)
+		.join("")
+		.toUpperCase();
+	const displayName =
+		user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "Account";
 	const email = user?.primaryEmailAddress?.emailAddress;
 
 	return (
@@ -36,9 +58,11 @@ export default function MainMenu() {
 			style={{ width: collapsed ? 64 : 224 }}
 		>
 			{/* Brand */}
-			<div className={`flex items-center gap-2.5 h-14 border-b border-zinc-100 ${collapsed ? "justify-center px-0" : "px-4"}`}>
+			<div
+				className={`flex items-center gap-2.5 h-14 border-b border-zinc-100 ${collapsed ? "justify-center px-0" : "px-4"}`}
+			>
 				<div className="h-7 w-7 rounded-lg bg-gradient-to-br from-zinc-900 to-zinc-700 flex items-center justify-center flex-shrink-0 shadow-sm">
-					<Sparkles className="h-3.5 w-3.5 text-white" />
+					<BrandMark className="h-4 w-4 text-white" />
 				</div>
 				{!collapsed && (
 					<div className="flex flex-col leading-none">
@@ -67,9 +91,13 @@ export default function MainMenu() {
 										: "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
 								}`}
 							>
-								<Icon className={`h-[16px] w-[16px] flex-shrink-0 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-700"}`} />
+								<Icon
+									className={`h-[16px] w-[16px] flex-shrink-0 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-700"}`}
+								/>
 								{!collapsed && <span className="truncate">{label}</span>}
-								{!collapsed && isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-500" />}
+								{!collapsed && isActive && (
+									<span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-500" />
+								)}
 							</div>
 						)}
 					</NavLink>
@@ -92,8 +120,12 @@ export default function MainMenu() {
 					)}
 					{!collapsed && (
 						<div className="flex-1 min-w-0">
-							<div className="text-[12px] font-semibold text-zinc-900 truncate leading-tight">{displayName}</div>
-							{email && <div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">{email}</div>}
+							<div className="text-[12px] font-semibold text-zinc-900 truncate leading-tight">
+								{displayName}
+							</div>
+							{email && (
+								<div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">{email}</div>
+							)}
 						</div>
 					)}
 				</div>
