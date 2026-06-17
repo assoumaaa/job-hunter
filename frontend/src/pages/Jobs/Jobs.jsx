@@ -1,254 +1,43 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
-import { Bolt as BoltIcon, FileText, RefreshCw, RotateCcw, ScanSearch, Trash2 } from "lucide-react";
+import { Bolt as BoltIcon, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
+import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_OPTIONS } from "./StatusChip";
 import { useCallApi, useLoading } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
+import AddJobDialog from "./AddJobDialog";
 import { AgGridReact } from "ag-grid-react";
+import AtsScoreCell from "./AtsScoreCell";
 import { Button } from "components/ui/button";
+import ConfirmModal from "./ConfirmModal";
+import DocChip from "./DocChip";
 import { Input } from "components/ui/input";
+import { PageHeader } from "components/ui/page-header";
 import { useSnackbar } from "notistack";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const gridTheme = themeQuartz.withParams({
 	fontSize: 13,
-	rowHeight: 52,
-	headerHeight: 36,
+	rowHeight: 56,
+	headerHeight: 38,
 	fontFamily: "Inter, sans-serif",
-	selectedRowBackgroundColor: "oklch(0.93 0.034 272.788)",
+	selectedRowBackgroundColor: "#fafafa",
 	columnBorder: false,
 	rowBorder: { color: "#f4f4f5", width: 1 },
-	oddRowBackgroundColor: "#fafafa",
-	headerBackgroundColor: "#ffffff",
-	headerTextColor: "#a1a1aa",
+	oddRowBackgroundColor: "#ffffff",
+	headerBackgroundColor: "#fafafa",
+	headerTextColor: "#71717a",
 	headerFontWeight: 500,
 	headerFontSize: 11,
+	cellHorizontalPadding: 14,
 });
 
-function StatusChip({ value, options, colorMap, onChange }) {
-	return (
-		<select
-			className={colorMap[value] ?? colorMap.__default}
-			value={value}
-			onChange={(e) => onChange(e.target.value)}
-			style={{
-				fontSize: 12,
-				fontWeight: 500,
-				padding: "2px 8px",
-				borderRadius: 999,
-				border: "none",
-				cursor: "pointer",
-				background: "transparent",
-			}}
-		>
-			{options.map((o) => (
-				<option key={o.value} value={o.value}>
-					{o.label}
-				</option>
-			))}
-		</select>
-	);
-}
-
-const RELEVANCE_OPTIONS = [
-	{ value: "unscreened", label: "?" },
-	{ value: "good_fit", label: "Good" },
-	{ value: "maybe", label: "Maybe" },
-	{ value: "irrelevant", label: "No" },
-];
-const RELEVANCE_COLORS = {
-	unscreened: "bg-zinc-100 text-zinc-400",
-	good_fit: "bg-green-100 text-green-700",
-	maybe: "bg-yellow-100 text-yellow-700",
-	irrelevant: "bg-red-100 text-red-600",
-};
-
-
-const APP_OPTIONS = [
-	{ value: "new", label: "New" },
-	{ value: "applied", label: "Applied" },
-	{ value: "interview", label: "Interview" },
-	{ value: "offer", label: "Offer" },
-	{ value: "rejected", label: "Rejected" },
-];
-const APP_COLORS = {
-	new: "bg-zinc-100 text-zinc-600",
-	applied: "bg-blue-100 text-blue-700",
-	interview: "bg-purple-100 text-purple-700",
-	offer: "bg-green-100 text-green-700",
-	rejected: "bg-red-100 text-red-700",
-};
-
 const selectCls =
-	"h-8 rounded-md border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-700 focus:outline-none focus:ring-1 focus:ring-zinc-400 cursor-pointer disabled:opacity-40";
+	"h-8 rounded-md border border-zinc-200 bg-white px-2.5 text-[12px] font-medium text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 cursor-pointer disabled:opacity-40 hover:border-zinc-300 transition-colors";
 
-function AtsScoreCell({ value }) {
-	if (value == null) return <span style={{ color: "#a1a1aa", fontSize: 12 }}>—</span>;
-	const color = value >= 85 ? "#16a34a" : value >= 70 ? "#ca8a04" : "#dc2626";
-	return <span style={{ fontWeight: 600, fontSize: 13, color }}>{value}</span>;
-}
-
-function DocChip({ value, label, contact }) {
-	const [loading, setLoading] = useState(false);
-	const [callApi] = useCallApi();
-
-	const ready = Boolean(value);
-
-	const openPdf = () => {
-		if (!ready || loading) return;
-		const isLatex = value.includes("\\documentclass") || value.includes("\\begin{");
-		const latex = isLatex ? value : buildClLatex(value, contact);
-		setLoading(true);
-		callApi("/cv/compile", {
-			method: "POST",
-			json: { latex },
-			responseType: "blob",
-			error: "PDF compile failed",
-			onSuccess: (blob) => {
-				window.open(URL.createObjectURL(blob), "_blank");
-			},
-		}).finally(() => setLoading(false));
-	};
-
-	if (!ready) {
-		return (
-			<div style={{
-				display: "inline-flex", alignItems: "center", gap: 4,
-				height: 22, padding: "0 8px",
-				borderRadius: 5,
-				border: "1px dashed #e4e4e7",
-				background: "transparent",
-				color: "#d4d4d8",
-				fontSize: 11, fontWeight: 500,
-				userSelect: "none", whiteSpace: "nowrap",
-			}}>
-				<FileText style={{ width: 10, height: 10, flexShrink: 0 }} />
-				{label}
-			</div>
-		);
-	}
-
-	return (
-		<button
-			onClick={openPdf}
-			disabled={loading}
-			style={{
-				display: "inline-flex", alignItems: "center", gap: 4,
-				height: 22, padding: "0 8px",
-				borderRadius: 5,
-				border: "1px solid #c4b5fd",
-				background: "#f5f3ff",
-				color: loading ? "#a78bfa" : "#7c3aed",
-				fontSize: 11, fontWeight: 600,
-				cursor: loading ? "default" : "pointer",
-				transition: "box-shadow 0.12s, background 0.12s",
-				whiteSpace: "nowrap",
-				letterSpacing: "0.01em",
-			}}
-			onMouseEnter={(e) => {
-				if (!loading) {
-					e.currentTarget.style.background = "#ede9fe";
-					e.currentTarget.style.boxShadow = "0 2px 6px rgba(124,58,237,0.15)";
-				}
-			}}
-			onMouseLeave={(e) => {
-				e.currentTarget.style.background = "#f5f3ff";
-				e.currentTarget.style.boxShadow = "none";
-			}}
-		>
-			<FileText style={{ width: 10, height: 10, flexShrink: 0 }} />
-			{loading ? "…" : label}
-		</button>
-	);
-}
-
-function buildClLatex(text, contact) {
-	const esc = (s) =>
-		s
-			.replace(/&/g, "\\&")
-			.replace(/%/g, "\\%")
-			.replace(/\$/, "\\$")
-			.replace(/#/g, "\\#")
-			.replace(/_/g, "\\_")
-			.replace(/\*\*(.+?)\*\*/g, "\\textbf{$1}");
-	const nameLine = contact?.name ? `{\\Large\\bfseries ${contact.name}}\\\\[2pt]` : "";
-	const locationLine = contact?.location ? `{\\small ${contact.location}}\\\\[1pt]` : "";
-	const urls = [contact?.linkedinUrl, contact?.githubUrl].filter(Boolean).join(" \\quad\\textbar\\quad ");
-	const urlLine = urls ? `{\\small ${urls}}` : "";
-	return `\\documentclass[11pt]{article}
-\\usepackage[top=0.9in,bottom=1in,left=1.1in,right=1.1in]{geometry}
-\\usepackage[T1]{fontenc}\\usepackage{lmodern}\\usepackage{parskip}
-\\setlength{\\parskip}{9pt}\\setlength{\\parindent}{0pt}\\pagestyle{empty}
-\\begin{document}
-\\begin{center}${nameLine}${locationLine}${urlLine}\\end{center}
-\\vspace{0.4em}\\hrule\\vspace{1em}
-${esc(text)}
-\\end{document}`;
-}
-
-function ConfirmModal({ message, onConfirm, onCancel }) {
-	return (
-		<div style={{
-			position: "fixed", inset: 0, zIndex: 9999,
-			background: "rgba(0,0,0,0.3)",
-			backdropFilter: "blur(4px)",
-			display: "flex", alignItems: "center", justifyContent: "center",
-		}} onClick={onCancel}>
-			<div
-				onClick={(e) => e.stopPropagation()}
-				style={{
-					background: "#fff", borderRadius: 16,
-					padding: "28px 28px 24px",
-					width: 360, boxShadow: "0 24px 64px rgba(0,0,0,0.15)",
-					border: "1px solid #f4f4f5",
-					display: "flex", flexDirection: "column", gap: 20,
-				}}
-			>
-				<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-					<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-						<div style={{
-							width: 36, height: 36, borderRadius: 10,
-							background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-						}}>
-							<Trash2 style={{ width: 16, height: 16, color: "#ef4444" }} />
-						</div>
-						<span style={{ fontSize: 15, fontWeight: 600, color: "#18181b" }}>Confirm Delete</span>
-					</div>
-					<p style={{ fontSize: 13, color: "#71717a", margin: 0, lineHeight: 1.5 }}>{message}</p>
-				</div>
-				<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-					<button onClick={onCancel} style={{
-						fontSize: 13, fontWeight: 500, color: "#52525b",
-						background: "#f4f4f5", border: "none", borderRadius: 8,
-						padding: "8px 16px", cursor: "pointer",
-						transition: "background 0.12s",
-					}}
-						onMouseEnter={e => e.currentTarget.style.background = "#e4e4e7"}
-						onMouseLeave={e => e.currentTarget.style.background = "#f4f4f5"}
-					>Cancel</button>
-					<button onClick={onConfirm} style={{
-						fontSize: 13, fontWeight: 600, color: "#fff",
-						background: "#ef4444", border: "none", borderRadius: 8,
-						padding: "8px 16px", cursor: "pointer",
-						transition: "background 0.12s",
-					}}
-						onMouseEnter={e => e.currentTarget.style.background = "#dc2626"}
-						onMouseLeave={e => e.currentTarget.style.background = "#ef4444"}
-					>Delete</button>
-				</div>
-			</div>
-		</div>
-	);
-}
-
-function fmtDate(iso) {
-	if (!iso) return "—";
-	const str = iso.includes("T") || iso.endsWith("Z") ? iso : iso.replace(" ", "T") + "Z";
-	const d = new Date(str);
-	return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-// ── main component ─────────────────────────────────────────────────────────
+const checkboxCls =
+	"h-3.5 w-3.5 rounded border-zinc-300 text-indigo-600 focus:ring-1 focus:ring-indigo-400 focus:ring-offset-0 cursor-pointer";
 
 export default function Jobs() {
 	const [jobs, setJobs] = useState([]);
@@ -262,15 +51,15 @@ export default function Jobs() {
 	const [filterTitle, setFilterTitle] = useState("");
 	const [viewFilter, setViewFilter] = useState("to_apply");
 	const [confirmDelete, setConfirmDelete] = useState(false);
+	const [showAddJob, setShowAddJob] = useState(false);
 
 	const [callApi] = useCallApi();
 	const loading = useLoading();
 	const { enqueueSnackbar } = useSnackbar();
+	const navigate = useNavigate();
 
 	const jobsRef = useRef([]);
-	useEffect(() => {
-		jobsRef.current = jobs;
-	}, [jobs]);
+	useEffect(() => { jobsRef.current = jobs; }, [jobs]);
 
 	const filteredJobs = useMemo(
 		() =>
@@ -281,7 +70,8 @@ export default function Jobs() {
 						j.applicationStatus !== "new")
 				)
 					return false;
-				if (viewFilter === "applied" && j.applicationStatus === "new") return false;
+				if (viewFilter === "applied" && j.applicationStatus !== "applied") return false;
+				if (viewFilter === "rejected" && j.applicationStatus !== "rejected") return false;
 				if (viewFilter === "no_fit" && j.relevanceStatus !== "irrelevant") return false;
 				if (filterCompany && !j.company.toLowerCase().includes(filterCompany.toLowerCase())) return false;
 				if (filterTitle && !j.title.toLowerCase().includes(filterTitle.toLowerCase())) return false;
@@ -317,10 +107,13 @@ export default function Jobs() {
 			{
 				field: "relevanceStatus",
 				headerName: "Fit",
-				width: 82,
+				width: 110,
 				cellRenderer: ({ value, data }) =>
 					screeningIds.has(data.id) ? (
-						<span style={{ fontSize: 11, padding: "2px 8px", background: "#f4f4f5", borderRadius: 999 }}>…</span>
+						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-medium">
+							<span className="h-1.5 w-1.5 rounded-full bg-zinc-400" style={{ animation: "pulse 1.2s ease-in-out infinite" }} />
+							Screening
+						</span>
 					) : (
 						<StatusChip
 							value={value}
@@ -333,35 +126,40 @@ export default function Jobs() {
 			{
 				headerName: "Job",
 				flex: 1,
-				minWidth: 260,
+				minWidth: 280,
 				sortable: true,
 				cellStyle: { display: "flex", alignItems: "center" },
 				cellRenderer: ({ data }) => (
-					<div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, overflow: "hidden", height: "100%" }}>
-						<span style={{ fontSize: 11, color: "#a1a1aa", fontWeight: 500, lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 4 }}>
+					<div className="flex flex-col justify-center gap-0.5 h-full overflow-hidden min-w-0">
+						<div className="flex items-center gap-1.5 text-[11px] text-zinc-500 font-medium leading-tight">
 							{data.source === "linkedin" ? (
-								<svg viewBox="0 0 24 24" style={{ width: 12, height: 12, flexShrink: 0 }} fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+								<svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" fill="#0A66C2">
+									<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+								</svg>
 							) : data.source === "greenhouse" ? (
-								<svg viewBox="0 0 24 24" style={{ width: 12, height: 12, flexShrink: 0 }} fill="#3B8427"><circle cx="12" cy="12" r="10"/><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text></svg>
-							) : null}
-							{data.company}
-							{data.location && (
-								<span style={{ color: "#d4d4d8", marginLeft: 6 }}>
-									· {data.location.split(",")[0]}
-								</span>
+								<svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" fill="#3B8427">
+									<circle cx="12" cy="12" r="10" />
+									<text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text>
+								</svg>
+							) : (
+								<span className="w-3 h-3 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 shrink-0">M</span>
 							)}
-						</span>
+							<span className="truncate">{data.company}</span>
+							{data.location && (
+								<span className="text-zinc-300">· {data.location.split(",")[0]}</span>
+							)}
+						</div>
 						{data.url ? (
 							<a
 								href={data.url}
 								target="_blank"
 								rel="noopener noreferrer"
-								style={{ fontSize: 13, fontWeight: 600, color: "#18181b", textDecoration: "none", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+								className="text-[13px] font-semibold text-zinc-900 hover:text-indigo-600 truncate leading-snug transition-colors"
 							>
 								{data.title}
 							</a>
 						) : (
-							<span style={{ fontSize: 13, fontWeight: 600, color: "#18181b", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+							<span className="text-[13px] font-semibold text-zinc-900 truncate leading-snug">
 								{data.title}
 							</span>
 						)}
@@ -371,7 +169,7 @@ export default function Jobs() {
 			{
 				field: "applicationStatus",
 				headerName: "Status",
-				width: 120,
+				width: 130,
 				cellRenderer: ({ value, data }) => (
 					<StatusChip
 						value={value}
@@ -389,28 +187,25 @@ export default function Jobs() {
 			{
 				field: "atsScore",
 				headerName: "ATS",
-				width: 72,
+				width: 70,
 				sortable: true,
 				cellRenderer: ({ value }) => <AtsScoreCell value={value} />,
 			},
 			{
 				headerName: "Docs",
-				width: 220,
+				width: 130,
 				cellRenderer: ({ data }) => {
 					const hasDocs = data.generatedCv || data.generatedCl;
 					const isGenerating = data.agentStatus === "generating";
 
 					if (data.agentStatus === "pending" && !hasDocs) {
-						return <span style={{ color: "#d4d4d8", fontSize: 12 }}>—</span>;
+						return <span className="text-zinc-300 text-xs">—</span>;
 					}
 
 					return (
-						<div style={{ display: "flex", alignItems: "center", gap: 6, height: "100%" }}>
+						<div className="flex items-center gap-1.5 h-full">
 							{isGenerating && (
-								<span style={{
-									display: "inline-block", width: 6, height: 6, borderRadius: "50%",
-									background: "#6366f1", animation: "pulse 1.2s ease-in-out infinite", flexShrink: 0,
-								}} />
+								<span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" style={{ animation: "pulse 1.2s ease-in-out infinite" }} />
 							)}
 							<DocChip value={data.generatedCv} label="CV" contact={contact} />
 							<DocChip value={data.generatedCl} label="CL" contact={contact} />
@@ -426,7 +221,8 @@ export default function Jobs() {
 				cellRenderer: ({ value, data }) => (
 					<input
 						type="date"
-						style={{ fontSize: 12, border: "none", background: "transparent", cursor: "pointer", width: "100%", color: value ? "#71717a" : "transparent" }}
+						className="text-[12px] border-none bg-transparent cursor-pointer w-full"
+						style={{ color: value ? "#71717a" : "transparent" }}
 						value={value ? new Date(value).toISOString().slice(0, 10) : ""}
 						onChange={(e) =>
 							patchJob(data.id, {
@@ -518,9 +314,7 @@ export default function Jobs() {
 	};
 
 	const handleGenerate = (ids) => {
-		if (!ids.length) {
-			return;
-		}
+		if (!ids.length) return;
 
 		callApi("/cv", {
 			error: "Failed to load CV",
@@ -574,6 +368,31 @@ export default function Jobs() {
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
+			{showAddJob && (
+				<AddJobDialog
+					onClose={() => setShowAddJob(false)}
+					onAdded={(job) => {
+						setJobs((prev) => [job, ...prev]);
+						enqueueSnackbar(`Added ${job.title} at ${job.company}`, { variant: "success" });
+						if (job.description) {
+							setScreeningIds(new Set([job.id]));
+							callApi("/jobs/screen", {
+								method: "POST",
+								json: { ids: [job.id] },
+								alias: "screenJobs",
+								error: "Failed to screen job",
+								onSuccess: (data) => {
+									enqueueSnackbar(
+										`Screening: ${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
+										{ variant: "info" },
+									);
+									fetchJobs();
+								},
+							}).finally(() => setScreeningIds(new Set()));
+						}
+					}}
+				/>
+			)}
 			{confirmDelete && (
 				<ConfirmModal
 					message={`This will permanently delete ${selectedIds.length} job${selectedIds.length > 1 ? "s" : ""}. This cannot be undone.`}
@@ -581,76 +400,75 @@ export default function Jobs() {
 					onCancel={() => setConfirmDelete(false)}
 				/>
 			)}
-			{/* Header */}
-			<div className="flex items-center gap-3 px-6 h-14 border-b border-zinc-100 shrink-0">
-				<h1 className="text-sm font-semibold text-zinc-900">Jobs</h1>
-				<span className="text-xs font-medium text-zinc-500 bg-zinc-100 px-2 py-0.5 rounded-full tabular-nums">
-					{filteredJobs.length}
-				</span>
 
-				<div className="flex items-center gap-2 ml-auto">
-					{toRegen.length > 0 && (
-						<Button
-							variant="outline"
-							size="sm"
-							onClick={() => handleGenerate(toRegen)}
-							disabled={loading?.generateJobs}
-						>
-							<RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-							{loading?.generateJobs ? "Generating..." : `Regenerate (${toRegen.length})`}
+			<PageHeader
+				title="Jobs"
+				badge={filteredJobs.length}
+				actions={
+					<>
+						<Button variant="outline" size="sm" onClick={() => setShowAddJob(true)}>
+							<Plus className="h-3.5 w-3.5" />
+							Add job
 						</Button>
-					)}
-					{(selectedIds.length === 0 || toGenerate.length > 0) && (
-						<Button
-							size="sm"
-							onClick={() => handleGenerate(toGenerate)}
-							disabled={loading?.generateJobs || !selectedIds.length}
-						>
-							<BoltIcon className="h-3.5 w-3.5 mr-1.5" />
-							{loading?.generateJobs
-								? "Generating..."
-								: selectedIds.length
-									? `Generate (${toGenerate.length})`
-									: "Generate"}
-						</Button>
-					)}
-				</div>
-			</div>
+						{toRegen.length > 0 && (
+							<Button variant="outline" size="sm" onClick={() => handleGenerate(toRegen)} disabled={loading?.generateJobs}>
+								<RotateCcw className="h-3.5 w-3.5" />
+								{loading?.generateJobs ? "Generating…" : `Regenerate (${toRegen.length})`}
+							</Button>
+						)}
+						{(selectedIds.length === 0 || toGenerate.length > 0) && (
+							<Button variant="primary" size="sm" onClick={() => handleGenerate(toGenerate)} disabled={loading?.generateJobs || !selectedIds.length}>
+								<BoltIcon className="h-3.5 w-3.5" />
+								{loading?.generateJobs
+									? "Generating…"
+									: selectedIds.length
+										? `Generate (${toGenerate.length})`
+										: "Generate"}
+							</Button>
+						)}
+					</>
+				}
+			/>
 
 			{/* Toolbar */}
-			<div className="flex items-center gap-2 px-6 py-2.5 border-b border-zinc-100 shrink-0 flex-wrap">
-				<Input
-					placeholder="Company"
-					value={filterCompany}
-					onChange={(e) => setFilterCompany(e.target.value)}
-					className="w-36 h-8 text-xs"
-				/>
-				<Input
-					placeholder="Job title"
-					value={filterTitle}
-					onChange={(e) => setFilterTitle(e.target.value)}
-					className="w-44 h-8 text-xs"
-				/>
+			<div className="flex items-center gap-2 px-6 py-2.5 border-b border-zinc-100 shrink-0 flex-wrap bg-zinc-50/40">
+				<div className="relative">
+					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+					<Input
+						placeholder="Company"
+						value={filterCompany}
+						onChange={(e) => setFilterCompany(e.target.value)}
+						className="w-36 h-8 text-xs pl-7"
+					/>
+				</div>
+				<div className="relative">
+					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+					<Input
+						placeholder="Job title"
+						value={filterTitle}
+						onChange={(e) => setFilterTitle(e.target.value)}
+						className="w-44 h-8 text-xs pl-7"
+					/>
+				</div>
 				<select className={selectCls} value={viewFilter} onChange={(e) => setViewFilter(e.target.value)}>
-					<option value="to_apply">To Apply</option>
-					<option value="applied">In Progress</option>
-					<option value="no_fit">No Fit</option>
-					<option value="all">All Jobs</option>
+					<option value="to_apply">To apply</option>
+					<option value="applied">Applied</option>
+					<option value="rejected">Rejected</option>
+					<option value="no_fit">No fit</option>
+					<option value="all">All jobs</option>
 				</select>
-				<Button
-					variant="ghost"
-					size="sm"
-					className="h-8 text-xs text-zinc-400 hover:text-zinc-600"
-					onClick={() => {
-						setFilterCompany("");
-						setFilterTitle("");
-						setViewFilter("to_apply");
-					}}
-				>
-					Reset
-				</Button>
+				{(filterCompany || filterTitle || viewFilter !== "to_apply") && (
+					<Button
+						variant="ghost"
+						size="sm"
+						className="h-8 text-xs text-zinc-500 hover:text-zinc-800"
+						onClick={() => { setFilterCompany(""); setFilterTitle(""); setViewFilter("to_apply"); }}
+					>
+						Reset
+					</Button>
+				)}
 
-				<div className="w-px h-4 bg-zinc-200 mx-0.5" />
+				<div className="w-px h-5 bg-zinc-200 mx-1" />
 
 				{!selectedIds.length && (
 					<>
@@ -664,13 +482,28 @@ export default function Jobs() {
 							<option value="week">Last week</option>
 							<option value="month">Last month</option>
 						</select>
-						<label className="flex items-center gap-1 text-xs text-zinc-600 cursor-pointer">
-							<input type="checkbox" checked={fetchLinkedin} onChange={(e) => setFetchLinkedin(e.target.checked)} className="rounded border-zinc-300" />
-							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+						<label className="flex items-center gap-1.5 text-[12px] text-zinc-600 cursor-pointer select-none px-1">
+							<input
+								type="checkbox"
+								checked={fetchLinkedin}
+								onChange={(e) => setFetchLinkedin(e.target.checked)}
+								className={checkboxCls}
+							/>
+							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2">
+								<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+							</svg>
 						</label>
-						<label className="flex items-center gap-1 text-xs text-zinc-600 cursor-pointer">
-							<input type="checkbox" checked={fetchGreenhouse} onChange={(e) => setFetchGreenhouse(e.target.checked)} className="rounded border-zinc-300" />
-							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#3B8427"><circle cx="12" cy="12" r="10"/><text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text></svg>
+						<label className="flex items-center gap-1.5 text-[12px] text-zinc-600 cursor-pointer select-none px-1">
+							<input
+								type="checkbox"
+								checked={fetchGreenhouse}
+								onChange={(e) => setFetchGreenhouse(e.target.checked)}
+								className={checkboxCls}
+							/>
+							<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#3B8427">
+								<circle cx="12" cy="12" r="10" />
+								<text x="12" y="16" textAnchor="middle" fill="white" fontSize="11" fontWeight="bold">G</text>
+							</svg>
 						</label>
 						<Button
 							variant="outline"
@@ -679,28 +512,22 @@ export default function Jobs() {
 							onClick={handleFetch}
 							disabled={loading?.fetchJobs || (!fetchLinkedin && !fetchGreenhouse)}
 						>
-							<RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading?.fetchJobs ? "animate-spin" : ""}`} />
-							{loading?.fetchJobs ? "Fetching..." : "Fetch"}
+							<RefreshCw className={`h-3.5 w-3.5 ${loading?.fetchJobs ? "animate-spin" : ""}`} />
+							{loading?.fetchJobs ? "Fetching…" : "Fetch"}
 						</Button>
 					</>
 				)}
 
 				{screenable > 0 && (
-					<Button
-						variant="outline"
-						size="sm"
-						className="h-8"
-						onClick={handleScreen}
-						disabled={loading?.screenJobs}
-					>
-						<ScanSearch className="h-3.5 w-3.5 mr-1.5" />
-						{loading?.screenJobs ? "Screening..." : `Screen (${screenable})`}
+					<Button variant="outline" size="sm" className="h-8" onClick={handleScreen} disabled={loading?.screenJobs}>
+						<ScanSearch className="h-3.5 w-3.5" />
+						{loading?.screenJobs ? "Screening…" : `Screen (${screenable})`}
 					</Button>
 				)}
 
 				{selectedIds.length > 0 && (
-					<Button variant="destructive" size="sm" className="h-8" onClick={handleDelete}>
-						<Trash2 className="h-3.5 w-3.5 mr-1.5" />
+					<Button variant="destructive" size="sm" className="h-8 ml-auto" onClick={handleDelete}>
+						<Trash2 className="h-3.5 w-3.5" />
 						Delete ({selectedIds.length})
 					</Button>
 				)}
@@ -714,11 +541,14 @@ export default function Jobs() {
 					columnDefs={colDefs}
 					getRowId={(params) => params.data.id}
 					getRowStyle={({ data }) => {
-						const border = { good_fit: "#16a34a", maybe: "#d97706", irrelevant: "#ef4444", unscreened: "#e4e4e7" };
-						const isApplied = data?.applicationStatus === "applied";
+						const border = {
+							good_fit: "#10b981",
+							maybe: "#f59e0b",
+							irrelevant: "#ef4444",
+							unscreened: "#e4e4e7",
+						};
 						return {
-							borderLeft: `3px solid ${border[data?.relevanceStatus] ?? "#e4e4e7"}`,
-							...(isApplied ? { opacity: 0.5 } : {}),
+							borderLeft: `2px solid ${border[data?.relevanceStatus] ?? "#e4e4e7"}`,
 						};
 					}}
 					rowSelection={{
@@ -728,10 +558,11 @@ export default function Jobs() {
 						enableClickSelection: false,
 					}}
 					onSelectionChanged={(e) => setSelectedIds(e.api.getSelectedRows().map((r) => r.id))}
-					rowClassRules={{
-						"opacity-50": (p) =>
-							(p.data?.agentStatus === "generating" || p.data?.agentStatus === "reviewing") &&
-							!p.data?.generatedCv,
+					onRowClicked={(e) => {
+						const t = e.event?.target;
+						if (t && t.closest('a, button, select, input, [role="button"]')) return;
+						if (!e.data?.generatedCv) return;
+						navigate(`/jobs/${e.data.id}/tweak`);
 					}}
 					defaultColDef={{ resizable: true }}
 					initialState={{ sort: { sortModel: [{ colId: "fetchedAt", sort: "desc" }] } }}

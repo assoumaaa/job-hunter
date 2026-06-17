@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently --names \"api,web,tex\" --prefix-colors \"cyan,magenta,yellow\" \"npm run api\" \"npm run web\" \"npm run tex\"",
+    "dev": "concurrently --names \"api,web\" --prefix-colors \"cyan,magenta\" \"npm run api\" \"npm run web\"",
     "api": "cd ../backend && poetry run uvicorn app.main:app --reload --port 8000",
     "web": "vite --host 0.0.0.0",
-    "tex": "node '../latex-service/index.js'",
     "build": "vite build",
     "preview": "vite preview"
   },

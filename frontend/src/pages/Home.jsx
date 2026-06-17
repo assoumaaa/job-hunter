@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import MainMenu from "./MainMenu";
 import Dashboard from "./Dashboard/Dashboard";
 import Jobs from "./Jobs";
+import TweakJob from "./Jobs/TweakJob";
 import CV from "./CV";
 import Positions from "./Positions";
 import Profile from "./Profile";
@@ -16,6 +17,7 @@ export default function Home() {
 					<Route index element={<Navigate to="/home" replace />} />
 					<Route path="/home" element={<Dashboard />} />
 					<Route path="/jobs" element={<Jobs />} />
+					<Route path="/jobs/:jobId/tweak" element={<TweakJob />} />
 					<Route path="/cv" element={<CV />} />
 					<Route path="/positions" element={<Positions />} />
 					<Route path="/profile" element={<Profile />} />

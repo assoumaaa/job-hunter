@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 
 from .core.db import Base, engine
 from .routes import (
@@ -13,6 +14,20 @@ from .routes import (
 
 # Import all models so SQLAlchemy picks them up before create_all
 from .models import User, Job, Position, Profile, CV  # noqa: F401
+
+
+def _ensure_jobs_tweak_columns() -> None:
+    """Idempotently add originalCv/originalCl columns on sqlite. create_all
+    doesn't ALTER existing tables, so we do it here once per startup."""
+    inspector = inspect(engine)
+    if "jobs" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("jobs")}
+    with engine.begin() as conn:
+        if "originalCv" not in existing:
+            conn.execute(text('ALTER TABLE jobs ADD COLUMN "originalCv" TEXT'))
+        if "originalCl" not in existing:
+            conn.execute(text('ALTER TABLE jobs ADD COLUMN "originalCl" TEXT'))
 
 
 def create_app() -> FastAPI:
@@ -37,6 +52,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def on_startup():
         Base.metadata.create_all(bind=engine)
+        _ensure_jobs_tweak_columns()
 
     @app.get("/health")
     def health():

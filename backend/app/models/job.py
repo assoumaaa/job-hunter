@@ -37,6 +37,11 @@ class Job(Base):
     generatedCl = Column(String, nullable=True)
     generatedAt = Column(DateTime, nullable=True)
 
+    # Snapshot of the originally generated CV/CL, set lazily on the first user
+    # tweak so the user can "Reset to original" after a chain of edits.
+    originalCv = Column(String, nullable=True)
+    originalCl = Column(String, nullable=True)
+
     createdAt = Column(DateTime, default=datetime.utcnow)
     updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

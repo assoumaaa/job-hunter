@@ -5,6 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{{NAME}} -- CV</title>
 <style>
+  @font-face {
+    font-family: 'CMU Serif';
+    src: url('./static/fonts/cmunrm.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: 'CMU Serif';
+    src: url('./static/fonts/cmunbx.otf') format('opentype');
+    font-weight: 700;
+    font-style: normal;
+  }
+  @font-face {
+    font-family: 'CMU Serif';
+    src: url('./static/fonts/cmunti.otf') format('opentype');
+    font-weight: 400;
+    font-style: italic;
+  }
+  @font-face {
+    font-family: 'CMU Serif';
+    src: url('./static/fonts/cmunbi.otf') format('opentype');
+    font-weight: 700;
+    font-style: italic;
+  }
+
   * {
     margin: 0;
     padding: 0;
@@ -17,8 +42,8 @@
   }
 
   body {
-    font-family: 'Times New Roman', 'DejaVu Serif', Georgia, serif;
-    font-size: 10pt;
+    font-family: 'CMU Serif', 'Times New Roman', 'DejaVu Serif', Georgia, serif;
+    font-size: 9.5pt;
     line-height: 1.35;
     color: #000;
     background: #fff;
@@ -70,7 +95,7 @@
   }
 
   .section-title {
-    font-size: 11pt;
+    font-size: 10.5pt;
     font-weight: 700;
     color: #000;
     border-bottom: 1px solid #000;
@@ -80,8 +105,8 @@
 
   /* === SUMMARY === */
   .summary-text {
-    font-size: 10pt;
-    line-height: 1.4;
+    font-size: 9.5pt;
+    line-height: 1.35;
   }
 
   /* === SKILLS === */
@@ -91,14 +116,22 @@
   }
 
   .skills-list {
-    padding-left: 18pt;
-    list-style-type: disc;
+    padding-left: 20pt;
+    list-style-type: none;
     margin: 0;
   }
 
   .skills-list li {
     font-size: 10pt;
-    margin-bottom: 1pt;
+    margin-bottom: 0;
+    text-indent: -12pt;
+    padding-left: 2pt;
+  }
+
+  .skills-list li::before {
+    content: "\2022";
+    font-size: 11pt;
+    margin-right: 5pt;
   }
 
   .skills-list .cat, .skill-line .cat {
@@ -147,15 +180,23 @@
   }
 
   .job ul {
-    padding-left: 18pt;
+    padding-left: 20pt;
     margin-top: 2pt;
-    list-style-type: disc;
+    list-style-type: none;
   }
 
   .job li {
     font-size: 10pt;
     line-height: 1.35;
     margin-bottom: 1pt;
+    text-indent: -12pt;
+    padding-left: 2pt;
+  }
+
+  .job li::before {
+    content: "\2022";
+    font-size: 11pt;
+    margin-right: 5pt;
   }
 
   /* === EDUCATION === */
@@ -274,7 +315,6 @@
 <body>
 <div class="page">
 
-  <!-- HEADER: two-column like LaTeX -->
   <div class="header">
     <div class="header-top">
       <div class="header-left">

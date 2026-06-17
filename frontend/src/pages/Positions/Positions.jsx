@@ -1,18 +1,43 @@
 import { useEffect, useRef, useState } from "react";
-import { Plus, Save, X } from "lucide-react";
+import { CheckCircle2, Plus, Save, X } from "lucide-react";
 
-import { useCallApi } from "services";
-import { COUNTRIES, COUNTRY_REGIONS } from "models";
 import { Button } from "components/ui/button";
 import { Input } from "components/ui/input";
+import { PageHeader } from "components/ui/page-header";
+import { useCallApi } from "services";
+import { COUNTRIES, COUNTRY_REGIONS } from "models";
 
 const SUGGESTED = ["Backend Engineer", "Frontend Engineer", "Full Stack Engineer", "Software Engineer", "Solution Engineer", "DevOps Engineer"];
 const JOB_TYPES = [
-	{ value: "fulltime", label: "Full-time" },
-	{ value: "contract", label: "Contract" },
-	{ value: "parttime", label: "Part-time" },
+	{ value: "fulltime",   label: "Full-time"  },
+	{ value: "contract",   label: "Contract"   },
+	{ value: "parttime",   label: "Part-time"  },
 	{ value: "internship", label: "Internship" },
 ];
+
+const pillCls = (active) =>
+	`px-3 h-7 rounded-full text-[12px] font-medium border transition-colors cursor-pointer ${
+		active
+			? "bg-zinc-900 text-white border-zinc-900"
+			: "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+	}`;
+
+function SectionCard({ title, description, action, children, padding = "p-5" }) {
+	return (
+		<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+			{(title || action) && (
+				<div className="px-5 py-4 border-b border-zinc-100 flex items-center justify-between gap-4">
+					<div>
+						{title && <p className="text-[13px] font-semibold text-zinc-900">{title}</p>}
+						{description && <p className="text-[11.5px] text-zinc-400 mt-0.5">{description}</p>}
+					</div>
+					{action}
+				</div>
+			)}
+			<div className={padding}>{children}</div>
+		</div>
+	);
+}
 
 export default function Positions() {
 	const [positions, setPositions] = useState([]);
@@ -76,108 +101,87 @@ export default function Positions() {
 				jobTypes: JSON.stringify(selectedJobTypes),
 				keywords: JSON.stringify(keywords),
 			},
-			success: "Settings saved!",
+			success: "Settings saved",
 		});
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);
 		setSaving(false);
 	};
 
-	const pill = (active) =>
-		`px-3 py-1 rounded-full text-sm border transition-colors cursor-pointer ${
-			active ? "bg-indigo-50 text-indigo-700 border-indigo-300" : "border-zinc-200 text-zinc-600 hover:border-zinc-400"
-		}`;
-
 	return (
-		<div className="h-full overflow-y-auto p-6">
-			<div className="max-w-2xl flex flex-col gap-6">
-				<div>
-					<h1 className="text-xl font-semibold">Positions &amp; Fetch Settings</h1>
-					<p className="text-sm text-zinc-500 mt-1">Configure what to search for and where when syncing from LinkedIn.</p>
-				</div>
+		<div className="flex flex-col h-full overflow-hidden">
+			<PageHeader
+				title="Targeting"
+				subtitle="What to search for and where"
+				actions={
+					<Button variant="primary" size="sm" onClick={saveSettings} disabled={saving}>
+						{saved ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+						{saved ? "Saved" : saving ? "Saving…" : "Save"}
+					</Button>
+				}
+			/>
 
-				{/* Job titles */}
-				<div className="bg-white border border-zinc-200 rounded-xl p-5 flex flex-col gap-4">
-					<span className="text-sm font-medium">Job Titles</span>
-					{positions.length > 0 && (
-						<div className="flex flex-wrap gap-2">
-							{positions.map((p) => (
-								<div key={p.id} className="flex items-center gap-1 bg-zinc-100 rounded-full px-3 py-1 text-sm">
-									{p.label}
-									<button onClick={() => removePosition(p.id)} className="ml-1 text-zinc-400 hover:text-zinc-700">
-										<X className="h-3 w-3" />
-									</button>
-								</div>
+			<div className="flex-1 overflow-y-auto">
+				<div className="max-w-[860px] mx-auto px-8 py-8 flex flex-col gap-5">
+
+					<SectionCard title="Job titles" description="Roles we'll search for on every sync">
+						{positions.length > 0 && (
+							<div className="flex flex-wrap gap-1.5 mb-3">
+								{positions.map((p) => (
+									<div key={p.id} className="inline-flex items-center gap-1.5 bg-zinc-100 rounded-full px-3 py-1 text-[12px] font-medium text-zinc-800">
+										{p.label}
+										<button onClick={() => removePosition(p.id)} className="text-zinc-400 hover:text-red-500">
+											<X className="h-3 w-3" />
+										</button>
+									</div>
+								))}
+							</div>
+						)}
+						<div className="flex gap-2">
+							<Input
+								placeholder="e.g. Platform Engineer"
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
+								onKeyDown={(e) => e.key === "Enter" && addPosition(input)}
+							/>
+							<Button variant="outline" onClick={() => addPosition(input)}>
+								<Plus className="h-4 w-4" /> Add
+							</Button>
+						</div>
+						<div className="flex flex-wrap gap-1.5 pt-4 mt-4 border-t border-zinc-100">
+							<span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide self-center mr-1">Suggested</span>
+							{SUGGESTED.map((s) => (
+								<button
+									key={s}
+									onClick={() => addPosition(s)}
+									disabled={!!positions.find((p) => p.label === s)}
+									className="text-[12px] px-3 h-7 rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 disabled:opacity-40 disabled:cursor-default cursor-pointer transition-colors"
+								>
+									+ {s}
+								</button>
 							))}
 						</div>
-					)}
-					<div className="flex gap-2">
-						<Input
-							placeholder="e.g. Platform Engineer"
-							value={input}
-							onChange={(e) => setInput(e.target.value)}
-							onKeyDown={(e) => e.key === "Enter" && addPosition(input)}
-						/>
-						<Button onClick={() => addPosition(input)}>
-							<Plus className="h-4 w-4 mr-1" /> Add
-						</Button>
-					</div>
-					<div className="flex flex-wrap gap-2 pt-1 border-t border-zinc-100">
-						{SUGGESTED.map((s) => (
-							<button
-								key={s}
-								onClick={() => addPosition(s)}
-								disabled={!!positions.find((p) => p.label === s)}
-								className="text-sm px-3 py-1 rounded-full border border-zinc-200 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-default cursor-pointer"
-							>
-								+ {s}
-							</button>
-						))}
-					</div>
-				</div>
+					</SectionCard>
 
-				{/* Fetch settings */}
-				<div className="bg-white border border-zinc-200 rounded-xl divide-y divide-zinc-100">
-					<div className="px-5 py-4 flex items-center justify-between">
-						<div>
-							<p className="text-sm font-semibold">Fetch Settings</p>
-							<p className="text-xs text-zinc-400 mt-0.5">Applied every time you sync jobs</p>
-						</div>
-						<Button size="sm" onClick={saveSettings} disabled={saving}>
-							<Save className="h-3.5 w-3.5 mr-1.5" />
-							{saved ? "Saved!" : saving ? "Saving..." : "Save"}
-						</Button>
-					</div>
-
-					{/* Job types */}
-					<div className="px-5 py-4 flex items-center justify-between gap-4">
-						<div>
-							<p className="text-sm font-medium">Job Type</p>
-							<p className="text-xs text-zinc-400 mt-0.5">Employment types to fetch</p>
-						</div>
-						<div className="flex gap-2 flex-wrap justify-end">
+					<SectionCard title="Job type" description="Employment types to include">
+						<div className="flex gap-1.5 flex-wrap">
 							{JOB_TYPES.map(({ value, label }) => (
-								<button key={value} onClick={() => toggleJobType(value)} className={pill(selectedJobTypes.includes(value))}>
+								<button key={value} onClick={() => toggleJobType(value)} className={pillCls(selectedJobTypes.includes(value))}>
 									{label}
 								</button>
 							))}
 						</div>
-					</div>
+					</SectionCard>
 
-					{/* Countries */}
-					<div className="px-5 py-4 flex flex-col gap-3">
-						<div>
-							<p className="text-sm font-medium">Countries</p>
-							<p className="text-xs text-zinc-400 mt-0.5">Jobs fetched from selected countries</p>
-						</div>
+					<SectionCard title="Countries" description="Jobs fetched from selected countries">
 						{selectedCountries.length > 0 && (
-							<div className="flex flex-wrap gap-2">
+							<div className="flex flex-wrap gap-1.5 mb-3">
 								{selectedCountries.map((code) => {
 									const c = COUNTRIES.find((x) => x.code === code);
 									return (
-										<div key={code} className="flex items-center gap-1 bg-indigo-100 text-indigo-800 rounded-full px-3 py-1 text-sm">
+										<div key={code} className="inline-flex items-center gap-1.5 bg-zinc-100 text-zinc-800 rounded-full px-3 py-1 text-[12px] font-medium">
 											{c?.name ?? code}
-											<button onClick={() => toggleCountry(code)} className="ml-1 opacity-70 hover:opacity-100">
+											<button onClick={() => toggleCountry(code)} className="text-zinc-400 hover:text-red-500">
 												<X className="h-3 w-3" />
 											</button>
 										</div>
@@ -186,11 +190,11 @@ export default function Positions() {
 							</div>
 						)}
 						<select
-							className="text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white text-zinc-700 max-w-xs cursor-pointer"
+							className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-700 max-w-xs cursor-pointer hover:border-zinc-300 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5"
 							value=""
 							onChange={(e) => { if (e.target.value) toggleCountry(e.target.value); }}
 						>
-							<option value="">+ Add country...</option>
+							<option value="">+ Add country…</option>
 							{COUNTRY_REGIONS.map(({ label, codes }) => (
 								<optgroup key={label} label={label}>
 									{codes
@@ -202,20 +206,15 @@ export default function Positions() {
 								</optgroup>
 							))}
 						</select>
-					</div>
+					</SectionCard>
 
-					{/* Keywords */}
-					<div className="px-5 py-4 flex flex-col gap-3">
-						<div>
-							<p className="text-sm font-medium">Keywords</p>
-							<p className="text-xs text-zinc-400 mt-0.5">Skills and technologies matched during screening</p>
-						</div>
+					<SectionCard title="Keywords" description="Skills and technologies matched during screening">
 						{keywords.length > 0 && (
-							<div className="flex flex-wrap gap-2">
+							<div className="flex flex-wrap gap-1.5 mb-3">
 								{keywords.map((kw) => (
-									<div key={kw} className="flex items-center gap-1 bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-full px-3 py-1 text-sm">
+									<div key={kw} className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 rounded-full px-3 py-1 text-[12px] font-medium ring-1 ring-inset ring-indigo-200/60">
 										{kw}
-										<button onClick={() => setKeywords((prev) => prev.filter((k) => k !== kw))} className="ml-1 opacity-60 hover:opacity-100">
+										<button onClick={() => setKeywords((prev) => prev.filter((k) => k !== kw))} className="text-indigo-400 hover:text-red-500">
 											<X className="h-3 w-3" />
 										</button>
 									</div>
@@ -236,11 +235,9 @@ export default function Positions() {
 								placeholder="Python, AWS, React — press Enter"
 								className="flex-1"
 							/>
-							<Button variant="outline" size="sm" onClick={() => addKeyword(keywordInput)}>
-								Add
-							</Button>
+							<Button variant="outline" onClick={() => addKeyword(keywordInput)}>Add</Button>
 						</div>
-					</div>
+					</SectionCard>
 				</div>
 			</div>
 		</div>

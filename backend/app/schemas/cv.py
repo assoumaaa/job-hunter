@@ -24,5 +24,11 @@ class CVCompileRequest(BaseModel):
     pageFormat: str = "a4"
 
 
+class CLCompileRequest(BaseModel):
+    text: str
+    contact: Optional[Dict[str, Any]] = None
+    pageFormat: str = "a4"
+
+
 class CVParseTextRequest(BaseModel):
     text: str

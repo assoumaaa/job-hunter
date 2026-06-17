@@ -8,6 +8,7 @@ WeasyPrint is pure Python — no Chromium, no browser startup, SaaS-friendly.
 from __future__ import annotations
 
 import html
+import math
 import re
 from pathlib import Path
 
@@ -110,6 +111,8 @@ def _build_certifications_html(certifications: list) -> str:
 
 
 def _build_skills_html(skills: list) -> str:
+    if not skills:
+        return ""
     parts = []
     for s in skills:
         items = ", ".join(_esc(i) for i in s.get("items", []))
@@ -145,22 +148,10 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
     header = data.get("header", {})
     page_width = "8.5in" if page_format == "letter" else "210mm"
 
-    # Build header left subtitle (location + links on separate lines, like LaTeX)
+    # Build header left subtitle (location only, no links)
     subtitle_parts = []
     if header.get("location"):
         subtitle_parts.append(_esc(header["location"]))
-    link_parts = []
-    if header.get("linkedin"):
-        display = header["linkedin"].replace("https://", "").replace("http://", "").rstrip("/")
-        link_parts.append(f'<a href="{_esc(header["linkedin"])}">{_esc(display)}</a>')
-    if header.get("github"):
-        display = header["github"].replace("https://", "").replace("http://", "").rstrip("/")
-        link_parts.append(f'<a href="{_esc(header["github"])}">{_esc(display)}</a>')
-    if header.get("portfolio"):
-        display = header["portfolio"].replace("https://", "").replace("http://", "").rstrip("/")
-        link_parts.append(f'<a href="{_esc(header["portfolio"])}">{_esc(display)}</a>')
-    if link_parts:
-        subtitle_parts.append(" | ".join(link_parts))
     header_subtitle = "<br>".join(subtitle_parts)
 
     # Build header right (email + phone)
@@ -189,7 +180,7 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
         return f'<div class="section{brk}"><div class="section-title">{title}</div>{content}</div>'
 
     summary_html = _esc(data.get("summary", ""))
-    competencies_html = _build_competencies_html(data.get("competencies", []))
+    competencies_html = ""
     experience_html = _build_experience_html(data.get("experience", []))
     projects_html = _build_projects_html(data.get("projects", []))
     education_html = _build_education_html(data.get("education", []))
@@ -225,28 +216,275 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
     return html_out
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Auto-fit: progressively scale typography + margins until the CV fits on
+# exactly one page. WeasyPrint lets us render the document, count pages, then
+# re-render with a tighter stylesheet — far more reliable than asking the LLM
+# to count lines or trying to estimate ahead of time.
+# ---------------------------------------------------------------------------
+
+
+def _fit_css(content_pt: float, title_pt: float, name_pt: float,
+             line_height: float, section_gap: float, job_gap: float,
+             bullet_gap: float = 1.0) -> str:
+    """CSS overrides for one scale step.
+
+    Externally-applied stylesheets win the cascade over the template's inline
+    <style> block at equal specificity (both are author-origin, our overrides
+    come later), so these values replace the template defaults wholesale.
+    """
+    return f"""
+body {{ font-size: {content_pt}pt; line-height: {line_height}; }}
+.section {{ margin-bottom: {section_gap}pt; }}
+.section-title {{ font-size: {title_pt}pt; }}
+.header-left h1 {{ font-size: {name_pt}pt; }}
+.header-left .subtitle, .header-right {{ font-size: {max(content_pt - 0.5, 7.5)}pt; }}
+.job {{ margin-bottom: {job_gap}pt; }}
+.job li {{ margin-bottom: {bullet_gap}pt; line-height: {line_height}; }}
+.summary-text {{ font-size: {content_pt}pt; line-height: {line_height}; }}
+.skill-line, .skills-list li,
+.job-company, .job-location, .job-role, .job-period, .job li,
+.edu-school, .edu-location, .edu-degree, .edu-year,
+.cert-title, .cert-year,
+.project-title, .project-desc,
+.languages-line, .competencies-list li {{ font-size: {content_pt}pt; }}
+.project-badge, .project-tech, .edu-desc {{ font-size: {max(content_pt - 0.5, 7.5)}pt; }}
+"""
+
+
+# Each step: (margin string for @page, override CSS string).
+# Step 0 mirrors the template defaults. Each subsequent step shrinks
+# proportionally — typography, gaps, and margins move together so the
+# document still looks intentional, not crushed.
+_FIT_STEPS: list[tuple[str, str]] = [
+    ("0.45in 0.5in",  _fit_css(10.00, 10.50, 16.0, 1.35, 6, 6, 1.0)),
+    ("0.4in 0.5in",   _fit_css(9.50,  10.25, 15.5, 1.32, 5, 5, 1.0)),
+    ("0.4in 0.45in",  _fit_css(9.25,  10.00, 15.0, 1.28, 5, 4, 0.5)),
+    ("0.35in 0.45in", _fit_css(9.00,   9.75, 14.5, 1.25, 4, 4, 0.5)),
+    ("0.35in 0.4in",  _fit_css(8.75,   9.50, 14.0, 1.22, 4, 3, 0.0)),
+    ("0.3in 0.4in",   _fit_css(8.50,   9.25, 13.5, 1.20, 3, 3, 0.0)),
+    ("0.3in 0.35in",  _fit_css(8.25,   9.00, 13.0, 1.18, 3, 2, 0.0)),
+    ("0.25in 0.35in", _fit_css(8.00,   8.75, 12.5, 1.15, 2, 2, 0.0)),
+]
+
+
+def _run_css_fit(
+    data: dict, lang: str, page_format: str, page_size: str
+) -> tuple[bytes | None, "weasyprint.Document"]:
+    """Try all CSS tightening steps. Returns (pdf_bytes, last_doc) if a step
+    produced a 1-page render; otherwise (None, last_doc) with the tightest doc."""
+    html_content = render_html(data, lang, page_format)
+    last_doc = None
+    for step_idx, (margin, override_css) in enumerate(_FIT_STEPS):
+        page_css = f"@page {{ size: {page_size}; margin: {margin}; }}"
+        css_list = [
+            weasyprint.CSS(string=page_css),
+            weasyprint.CSS(string=override_css),
+        ]
+        html_doc = weasyprint.HTML(string=html_content, base_url=str(_BACKEND_DIR))
+        doc = html_doc.render(stylesheets=css_list)
+        last_doc = doc
+
+        if len(doc.pages) == 1:
+            if step_idx > 0:
+                logger.info("CV auto-fit converged at step %d (%s)", step_idx, margin)
+            return doc.write_pdf(), doc
+
+    return None, last_doc
+
+
 def generate_pdf(
     data: dict,
     lang: str = "en",
     page_format: str = "a4",
+    trim_callback: "callable | None" = None,
+    max_trims: int = 2,
 ) -> bytes:
-    """Generate a PDF from structured CV data. Returns raw PDF bytes.
+    """Generate a one-page PDF from structured CV data.
 
-    Uses WeasyPrint — pure Python, no browser, SaaS-friendly.
+    Strategy:
+      1. CSS auto-fit (8 tightening steps). Free, no model calls.
+      2. If CSS exhausts itself and `trim_callback(data, overflow_words) -> data`
+         is provided, ask it to shorten bullet wording, then re-run CSS auto-fit.
+         Repeats up to `max_trims` times.
+      3. If still multi-page, returns best-effort PDF.
     """
-    html_content = render_html(data, lang, page_format)
+    page_size = "letter" if page_format == "letter" else "A4"
 
-    # WeasyPrint handles page size via CSS @page rule
-    # We inject a @page rule based on the requested format
+    pdf_bytes, last_doc = _run_css_fit(data, lang, page_format, page_size)
+    if pdf_bytes is not None:
+        return pdf_bytes
+
+    if trim_callback is None:
+        logger.warning(
+            "CV overflows at tightest CSS step (%d pages); no trim_callback provided.",
+            len(last_doc.pages) if last_doc else 0,
+        )
+        return last_doc.write_pdf()
+
+    current_data = data
+    for attempt in range(max_trims):
+        page_count = len(last_doc.pages) if last_doc else 2
+        # Escalate cut size: 30 words first attempt, 60 second. Multiply by 2 if 3+ pages.
+        overflow_words = 30 * (attempt + 1) * (2 if page_count >= 3 else 1)
+        logger.info(
+            "CV trim attempt %d/%d (pages=%d, target_cut~%d words)",
+            attempt + 1, max_trims, page_count, overflow_words,
+        )
+
+        try:
+            trimmed = trim_callback(current_data, overflow_words)
+        except Exception as e:
+            logger.warning("trim_callback failed: %s; aborting trim loop.", e)
+            break
+
+        if not isinstance(trimmed, dict):
+            logger.warning("trim_callback returned non-dict; aborting trim loop.")
+            break
+
+        current_data = trimmed
+        pdf_bytes, last_doc = _run_css_fit(current_data, lang, page_format, page_size)
+        if pdf_bytes is not None:
+            logger.info("CV fit via content trim (attempt %d)", attempt + 1)
+            return pdf_bytes
+
+    logger.warning(
+        "CV still overflows after %d trim attempts; returning best-effort %d-page PDF.",
+        max_trims, len(last_doc.pages) if last_doc else 0,
+    )
+    return last_doc.write_pdf()
+
+
+def generate_cover_letter_pdf(
+    text: str,
+    contact: dict | None = None,
+    page_format: str = "a4",
+) -> bytes:
+    """Generate a PDF from cover letter text. Returns raw PDF bytes."""
+    contact = contact or {}
+    page_width = "8.5in" if page_format == "letter" else "210mm"
+
+    # Build header
+    header_parts = []
+    if contact.get("name"):
+        header_parts.append(f'<h1 style="font-size:16pt;font-weight:700;margin-bottom:2pt">{_esc(contact["name"])}</h1>')
+    subtitle_bits = []
+    if contact.get("location"):
+        subtitle_bits.append(_esc(contact["location"]))
+    link_bits = []
+    if contact.get("linkedinUrl"):
+        link_bits.append(f'<a href="{_esc(contact["linkedinUrl"])}">{_esc(contact["linkedinUrl"].replace("https://","").rstrip("/"))}</a>')
+    if contact.get("githubUrl"):
+        link_bits.append(f'<a href="{_esc(contact["githubUrl"])}">{_esc(contact["githubUrl"].replace("https://","").rstrip("/"))}</a>')
+    if link_bits:
+        subtitle_bits.append(" | ".join(link_bits))
+    if subtitle_bits:
+        header_parts.append(f'<div style="font-size:9pt">{"<br>".join(subtitle_bits)}</div>')
+
+    header_html = "\n".join(header_parts)
+
+    # Convert markdown bold and paragraphs
+    body = _esc(text)
+    body = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', body)
+    paragraphs = "\n".join(f"<p>{p.strip()}</p>" for p in body.split("\n\n") if p.strip())
+    if not paragraphs:
+        paragraphs = f"<p>{body}</p>"
+
+    html_content = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><style>
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ font-family:'Times New Roman','DejaVu Serif',Georgia,serif; font-size:11pt; line-height:1.5; color:#000; background:#fff; }}
+.page {{ width:100%; max-width:{page_width}; margin:0 auto; }}
+a {{ color:#000; text-decoration:none; }}
+.header {{ text-align:center; margin-bottom:8pt; }}
+hr {{ border:none; border-top:1px solid #000; margin:8pt 0 16pt 0; }}
+p {{ margin-bottom:11pt; }}
+</style></head><body>
+<div class="page">
+<div class="header">{header_html}</div>
+<hr>
+{paragraphs}
+</div></body></html>"""
+
+    html_content = _normalize_for_ats(html_content)
+
     if page_format == "letter":
-        page_css = "@page { size: letter; margin: 0.45in 0.5in; }"
+        page_css = "@page { size: letter; margin: 0.9in 1.1in; }"
     else:
-        page_css = "@page { size: A4; margin: 0.45in 0.5in; }"
+        page_css = "@page { size: A4; margin: 0.9in 1.1in; }"
 
     css = weasyprint.CSS(string=page_css)
-    html_doc = weasyprint.HTML(
-        string=html_content,
-        base_url=str(_BACKEND_DIR),
-    )
-
+    html_doc = weasyprint.HTML(string=html_content, base_url=str(_BACKEND_DIR))
     return html_doc.write_pdf(stylesheets=[css])
+
+
+# ---------------------------------------------------------------------------
+# Page estimation (empirically calibrated for A4, 9.5pt CMU Serif, 0.45in margins)
+# ---------------------------------------------------------------------------
+_CHARS_PER_LINE = 116   # max chars in a bullet line before wrapping
+_WRAP_COST = 0.87       # a wrapped continuation line costs 0.87 line-units (vs 1.0 for a new bullet)
+_PAGE_CAPACITY = 47     # total line-units that fit on one A4 page
+
+
+def estimate_cv_pages(data: dict) -> dict:
+    """Estimate how many pages a CV will consume without rendering it.
+
+    Returns dict with: used, capacity, pages, percent, fits_one_page
+    """
+    used = 0.0
+
+    if data.get("summary"):
+        summary_lines = math.ceil(len(data["summary"]) / 140)  # summary is wider (no bullet indent)
+        used += 2 + summary_lines
+
+    skills = data.get("skills", [])
+    if skills:
+        used += 2
+        for s in skills:
+            line = f"{s.get('category', '')}: {', '.join(s.get('items', []))}"
+            n = math.ceil(len(line) / _CHARS_PER_LINE)
+            used += 1 + (n - 1) * _WRAP_COST
+
+    education = data.get("education", [])
+    if education:
+        used += 2 + len(education)
+
+    if data.get("languages"):
+        used += 1
+
+    certs = data.get("certifications", [])
+    if certs:
+        used += 2 + len(certs)
+
+    projects = data.get("projects", [])
+    if projects:
+        used += 2
+        for p in projects:
+            desc_lines = math.ceil(len(p.get("description", "")) / _CHARS_PER_LINE)
+            used += 1 + max(desc_lines, 1)
+
+    jobs = data.get("experience", [])
+    if jobs:
+        used += 1
+        for job in jobs:
+            used += 2
+            for bullet in job.get("bullets", []):
+                n = math.ceil(len(bullet) / _CHARS_PER_LINE)
+                used += 1 + (n - 1) * _WRAP_COST
+
+    used = round(used, 1)
+    pages = math.ceil(used / _PAGE_CAPACITY)
+    percent = round(used / _PAGE_CAPACITY * 100)
+
+    return {
+        "used": used,
+        "capacity": _PAGE_CAPACITY,
+        "pages": max(pages, 1),
+        "percent": percent,
+        "fits_one_page": used <= _PAGE_CAPACITY,
+    }

@@ -28,10 +28,24 @@ class JobOut(BaseModel):
     generatedCv: Optional[str] = None
     generatedCl: Optional[str] = None
     generatedAt: Optional[datetime] = None
+    originalCv: Optional[str] = None
+    originalCl: Optional[str] = None
     createdAt: Optional[datetime] = None
     updatedAt: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class TweakRequest(BaseModel):
+    target: str  # "cv" | "cl"
+    prompt: str
+
+
+class TweakResponse(BaseModel):
+    target: str
+    generatedCv: Optional[str] = None
+    generatedCl: Optional[str] = None
+    hasOriginal: bool = True
 
 
 class JobUpdateRequest(BaseModel):
@@ -65,6 +79,28 @@ class ScreenResult(BaseModel):
     maybe: int
     irrelevant: int
     details: Optional[List[Dict[str, Any]]] = None  # per-job score/reason/archetype
+
+
+class ManualJobRequest(BaseModel):
+    title: str
+    company: str
+    description: str
+    url: Optional[str] = None
+    location: Optional[str] = None
+    source: Optional[str] = "manual"
+
+
+class ExtractUrlRequest(BaseModel):
+    url: str
+
+
+class ExtractedJobResponse(BaseModel):
+    title: str
+    company: str
+    description: str
+    location: Optional[str] = None
+    url: Optional[str] = None
+    source: Optional[str] = None
 
 
 class SyncRequest(BaseModel):

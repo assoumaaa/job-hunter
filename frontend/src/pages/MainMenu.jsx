@@ -1,90 +1,132 @@
-import { Briefcase, ChevronLeft, ChevronRight, FileText, LayoutDashboard, ListChecks, LogOut, User, Zap } from "lucide-react";
-import { useState } from "react";
+import { Briefcase, ChevronsLeft, ChevronsRight, FileText, LayoutDashboard, ListChecks, LogOut, Sparkles, User } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { NavLink } from "react-router-dom";
-import { useClerk } from "@clerk/clerk-react";
+import { useClerk, useUser } from "@clerk/clerk-react";
 
 const NAV = [
-	{ to: "/home", label: "Home", Icon: LayoutDashboard },
-	{ to: "/jobs", label: "Jobs", Icon: Briefcase },
-	{ to: "/positions", label: "Positions", Icon: ListChecks },
-	{ to: "/cv", label: "My CV", Icon: FileText },
-	{ to: "/profile", label: "Profile", Icon: User },
+	{ to: "/home",      label: "Overview",  Icon: LayoutDashboard },
+	{ to: "/jobs",      label: "Jobs",      Icon: Briefcase },
+	{ to: "/positions", label: "Targeting", Icon: ListChecks },
+	{ to: "/cv",        label: "My CV",     Icon: FileText },
+	{ to: "/profile",   label: "Profile",   Icon: User },
 ];
+
+const STORAGE_KEY = "jh.menu.collapsed";
 
 export default function MainMenu() {
 	const { signOut } = useClerk();
-	const [collapsed, setCollapsed] = useState(false);
+	const { user } = useUser();
+	const [collapsed, setCollapsed] = useState(() => {
+		try { return localStorage.getItem(STORAGE_KEY) === "1"; } catch { return false; }
+	});
+
+	useEffect(() => {
+		try { localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0"); } catch {}
+	}, [collapsed]);
+
+	const initials = (user?.fullName || user?.primaryEmailAddress?.emailAddress || "?")
+		.split(/\s+/).map(s => s[0]).slice(0, 2).join("").toUpperCase();
+	const displayName = user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "Account";
+	const email = user?.primaryEmailAddress?.emailAddress;
 
 	return (
-		<nav
-			className="flex-shrink-0 border-r border-zinc-200 flex flex-col bg-white py-3 h-screen transition-all duration-200"
-			style={{ width: collapsed ? 56 : 180 }}
+		<aside
+			className="flex-shrink-0 border-r border-zinc-200/80 flex flex-col bg-white h-screen transition-[width] duration-200 ease-out"
+			style={{ width: collapsed ? 64 : 224 }}
 		>
-			{/* Logo */}
-			<div className={`flex items-center gap-2.5 px-3 py-2 ${collapsed ? "justify-center" : ""}`}>
-				<div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-sm">
-					<Zap className="h-4 w-4 text-white" />
+			{/* Brand */}
+			<div className={`flex items-center gap-2.5 h-14 border-b border-zinc-100 ${collapsed ? "justify-center px-0" : "px-4"}`}>
+				<div className="h-7 w-7 rounded-lg bg-gradient-to-br from-zinc-900 to-zinc-700 flex items-center justify-center flex-shrink-0 shadow-sm">
+					<Sparkles className="h-3.5 w-3.5 text-white" />
 				</div>
 				{!collapsed && (
-					<span className="text-sm font-bold tracking-tight text-indigo-600 truncate">Job Hunter</span>
+					<div className="flex flex-col leading-none">
+						<span className="text-[13px] font-semibold text-zinc-900 tracking-tight">Job Hunter</span>
+						<span className="text-[10px] font-medium text-zinc-400 mt-0.5">workspace</span>
+					</div>
 				)}
 			</div>
 
-			<div className="border-t border-zinc-100 my-2" />
-
-			{/* Nav items */}
-			<div className="flex-1 px-2 flex flex-col gap-0.5">
+			{/* Nav */}
+			<nav className="flex-1 px-2 py-3 flex flex-col gap-0.5">
+				{!collapsed && (
+					<div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+						Workspace
+					</div>
+				)}
 				{NAV.map(({ to, label, Icon }) => (
-					<NavLink key={to} to={to} style={{ textDecoration: "none" }} title={collapsed ? label : undefined}>
+					<NavLink key={to} to={to} title={collapsed ? label : undefined}>
 						{({ isActive }) => (
 							<div
-								className={`flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+								className={`group flex items-center gap-2.5 px-2.5 h-9 rounded-lg text-[13px] font-medium transition-all duration-100 ${
 									collapsed ? "justify-center" : ""
 								} ${
 									isActive
-										? "bg-indigo-50 text-indigo-700"
-										: "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+										? "bg-zinc-100 text-zinc-900"
+										: "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
 								}`}
 							>
-								<Icon className="h-[18px] w-[18px] flex-shrink-0" />
-								{!collapsed && label}
+								<Icon className={`h-[16px] w-[16px] flex-shrink-0 transition-colors ${isActive ? "text-zinc-900" : "text-zinc-400 group-hover:text-zinc-700"}`} />
+								{!collapsed && <span className="truncate">{label}</span>}
+								{!collapsed && isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-indigo-500" />}
 							</div>
 						)}
 					</NavLink>
 				))}
-			</div>
+			</nav>
 
-			<div className="border-t border-zinc-100 mb-2" />
-
-			{/* Collapse toggle */}
-			<div className="px-2 mb-1">
-				<button
-					onClick={() => setCollapsed((c) => !c)}
-					className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm font-medium text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors cursor-pointer ${collapsed ? "justify-center" : ""}`}
-				>
-					{collapsed ? (
-						<ChevronRight className="h-[18px] w-[18px] flex-shrink-0" />
+			{/* User card */}
+			<div className="border-t border-zinc-100 p-2 flex flex-col gap-1">
+				<div className={`flex items-center gap-2.5 px-2 py-2 rounded-lg ${collapsed ? "justify-center" : ""}`}>
+					{user?.imageUrl ? (
+						<img
+							src={user.imageUrl}
+							alt={displayName}
+							className="h-7 w-7 rounded-full flex-shrink-0 object-cover ring-1 ring-zinc-200"
+						/>
 					) : (
-						<>
-							<ChevronLeft className="h-[18px] w-[18px] flex-shrink-0" />
-							<span>Collapse</span>
-						</>
+						<div className="h-7 w-7 rounded-full bg-indigo-100 text-indigo-700 text-[11px] font-semibold flex items-center justify-center flex-shrink-0">
+							{initials}
+						</div>
 					)}
-				</button>
-			</div>
+					{!collapsed && (
+						<div className="flex-1 min-w-0">
+							<div className="text-[12px] font-semibold text-zinc-900 truncate leading-tight">{displayName}</div>
+							{email && <div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">{email}</div>}
+						</div>
+					)}
+				</div>
 
-			{/* Logout */}
-			<div className="px-2">
-				<button
-					onClick={signOut}
-					title={collapsed ? "Logout" : undefined}
-					className={`w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer ${collapsed ? "justify-center" : ""}`}
-				>
-					<LogOut className="h-[18px] w-[18px] flex-shrink-0" />
-					{!collapsed && "Logout"}
-				</button>
+				<div className="flex gap-1">
+					<button
+						onClick={() => signOut()}
+						title="Sign out"
+						className={`${collapsed ? "w-full" : "flex-1"} h-8 rounded-md flex items-center justify-center gap-1.5 text-[12px] font-medium text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer`}
+					>
+						<LogOut className="h-3.5 w-3.5" />
+						{!collapsed && "Sign out"}
+					</button>
+					{!collapsed && (
+						<button
+							onClick={() => setCollapsed(true)}
+							title="Collapse"
+							className="h-8 w-8 rounded-md flex items-center justify-center text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors cursor-pointer"
+						>
+							<ChevronsLeft className="h-3.5 w-3.5" />
+						</button>
+					)}
+				</div>
+				{collapsed && (
+					<button
+						onClick={() => setCollapsed(false)}
+						title="Expand"
+						className="h-8 w-full rounded-md flex items-center justify-center text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 transition-colors cursor-pointer"
+					>
+						<ChevronsRight className="h-3.5 w-3.5" />
+					</button>
+				)}
 			</div>
-		</nav>
+		</aside>
 	);
 }

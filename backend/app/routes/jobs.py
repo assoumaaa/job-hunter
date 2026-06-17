@@ -15,16 +15,21 @@ from ..models.profile import Profile
 from ..models.position import Position
 from ..models.user import User
 from ..schemas.job import (
+    ExtractedJobResponse,
+    ExtractUrlRequest,
     GenerateRequest,
     JobDeleteRequest,
     JobOut,
     JobUpdateRequest,
+    ManualJobRequest,
     ScreenRequest,
     ScreenResult,
     SyncRequest,
     SyncResult,
+    TweakRequest,
+    TweakResponse,
 )
-from ..services import claude, apify, greenhouse
+from ..services import claude, apify, greenhouse, job_extractor
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -85,6 +90,67 @@ def delete_jobs(
     return {"deleted": len(body.ids)}
 
 
+@router.post("/extract-url", response_model=ExtractedJobResponse)
+def extract_url(
+    body: ExtractUrlRequest,
+    current_user: User = Depends(get_current_user),
+):
+    url = (body.url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    try:
+        extracted = job_extractor.extract_from_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch the page: {e.__class__.__name__}",
+        )
+    return ExtractedJobResponse(
+        title=extracted.title,
+        company=extracted.company,
+        description=extracted.description,
+        location=extracted.location,
+        url=extracted.url,
+        source=extracted.source,
+    )
+
+
+@router.post("/manual", response_model=JobOut)
+def add_manual_job(
+    body: ManualJobRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Deduplicate by URL if provided
+    if body.url:
+        parsed = urlparse(body.url.split("?")[0].rstrip("/"))
+        norm = f"https://linkedin.com{parsed.path}" if "linkedin.com" in parsed.netloc else parsed.geturl()
+        existing = db.query(Job).filter(Job.userId == current_user.id, Job.url == norm).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="A job with this URL already exists.")
+    else:
+        norm = None
+
+    job = Job(
+        userId=current_user.id,
+        title=body.title,
+        company=body.company,
+        location=body.location,
+        description=body.description,
+        url=norm,
+        source=body.source or "manual",
+        agentStatus="pending",
+        applicationStatus="new",
+        fetchedAt=datetime.utcnow(),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
 @router.post("/generate", response_model=list[JobOut])
 def generate_cv(
     body: GenerateRequest,
@@ -138,71 +204,43 @@ def generate_cv(
         db.commit()
 
         archetype = job.archetype
+        candidate_years = (profile.totalYearsExperience if profile else None)
 
-        result = claude.generate_cv_and_cl(
-            base_cv_data,
-            job.description or "",
-            job.title,
-            job.company,
-            1,
-            None,
-            None,
-            profile_context,
-            candidate_name,
-            linkedin_url,
-            github_url,
-            archetype,
-            narrative,
+        # Status callback flips the job to "reviewing" once we start iterating
+        def _on_pass(pass_num, _score, _job=job):
+            if pass_num >= 2:
+                _job.agentStatus = "reviewing"
+                db.commit()
+
+        result = claude.tailor_cv_iterative(
+            base_cv=base_cv_data,
+            job_description=job.description or "",
+            job_title=job.title,
+            company=job.company,
+            profile_context=profile_context,
+            candidate_name=candidate_name,
+            linkedin_url=linkedin_url,
+            github_url=github_url,
+            archetype=archetype,
+            narrative=narrative,
+            candidate_years=candidate_years,
+            on_pass=_on_pass,
         )
 
-        if result.ats_breakdown.decision == "NEEDS_REVISION" and result.ats_score >= 70:
-            job.agentStatus = "reviewing"
-            db.commit()
-            result = claude.generate_cv_and_cl(
-                base_cv_data,
-                job.description or "",
-                job.title,
-                job.company,
-                2,
-                result.resume,
-                result.ats_score,
-                profile_context,
-                candidate_name,
-                linkedin_url,
-                github_url,
-                archetype,
-                narrative,
-            )
-
-        if result.ats_breakdown.decision == "NEEDS_REVISION" and result.ats_score >= 70:
-            result = claude.generate_cv_and_cl(
-                base_cv_data,
-                job.description or "",
-                job.title,
-                job.company,
-                3,
-                result.resume,
-                result.ats_score,
-                profile_context,
-                candidate_name,
-                linkedin_url,
-                github_url,
-                archetype,
-                narrative,
-            )
-
-        # Assemble final CV: generated sections + base header
+        # Assemble final CV: generated sections + base header + base languages
+        # (Claude's output schema doesn't include languages — they're factual, not tailored)
         assembled = {**result.resume}
         assembled["header"] = base_cv_data.get("header", {})
+        assembled["languages"] = base_cv_data.get("languages", [])
 
-        job.agentStatus = "rejected" if result.ats_score < 70 else "done"
+        job.agentStatus = "rejected" if result.ats_score < 60 else "done"
         job.atsScore = result.ats_score
         job.atsBreakdown = json.dumps(
             {
                 "keyword": result.ats_breakdown.keyword,
-                "experience": result.ats_breakdown.experience,
-                "skills": result.ats_breakdown.skills,
+                "requirements": result.ats_breakdown.experience,
                 "format": result.ats_breakdown.format,
+                "semantic": result.ats_breakdown.skills,
                 "impact": result.ats_breakdown.impact,
                 "decision": result.ats_breakdown.decision,
                 "gaps": result.ats_breakdown.gaps,
@@ -414,4 +452,102 @@ def fetch_jobs(
         inserted=total_inserted,
         skipped=total_skipped,
         bySource=by_source,
+    )
+
+
+def _load_user_base_cv(db: Session, current_user: User) -> dict:
+    user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
+    if not user_cv or not user_cv.structuredData:
+        raise HTTPException(status_code=400, detail="No base CV on file.")
+    return json.loads(user_cv.structuredData)
+
+
+@router.post("/{job_id}/tweak", response_model=TweakResponse)
+def tweak_job_doc(
+    job_id: str,
+    body: TweakRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Apply a plain-English tweak to the generated CV or cover letter.
+
+    Snapshots the original on first invocation so the user can reset later.
+    Uses Haiku — cheap, mechanical edit. Does NOT re-run the ATS scoring loop.
+    """
+    if body.target not in ("cv", "cl"):
+        raise HTTPException(status_code=400, detail="target must be 'cv' or 'cl'")
+    prompt = (body.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt is empty")
+
+    job = (
+        db.query(Job)
+        .filter(Job.id == job_id, Job.userId == current_user.id)
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    base_cv = _load_user_base_cv(db, current_user)
+
+    if body.target == "cv":
+        if not job.generatedCv:
+            raise HTTPException(status_code=400, detail="Job has no generated CV yet")
+        current_cv = json.loads(job.generatedCv)
+        # Snapshot original on first tweak
+        if not job.originalCv:
+            job.originalCv = job.generatedCv
+        updated = claude.apply_cv_tweak(current_cv, base_cv, prompt)
+        job.generatedCv = json.dumps(updated)
+    else:  # cl
+        if not job.generatedCl:
+            raise HTTPException(status_code=400, detail="Job has no generated cover letter yet")
+        if not job.originalCl:
+            job.originalCl = job.generatedCl
+        updated_text = claude.apply_cl_tweak(job.generatedCl, base_cv, prompt)
+        job.generatedCl = updated_text
+
+    job.updatedAt = datetime.utcnow()
+    db.commit()
+    db.refresh(job)
+
+    return TweakResponse(
+        target=body.target,
+        generatedCv=job.generatedCv,
+        generatedCl=job.generatedCl,
+        hasOriginal=bool(job.originalCv or job.originalCl),
+    )
+
+
+@router.post("/{job_id}/reset-tweaks", response_model=TweakResponse)
+def reset_job_tweaks(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Restore generatedCv / generatedCl from their pre-tweak snapshots."""
+    job = (
+        db.query(Job)
+        .filter(Job.id == job_id, Job.userId == current_user.id)
+        .first()
+    )
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not (job.originalCv or job.originalCl):
+        raise HTTPException(status_code=400, detail="Nothing to reset — this job has not been tweaked.")
+
+    if job.originalCv:
+        job.generatedCv = job.originalCv
+    if job.originalCl:
+        job.generatedCl = job.originalCl
+    job.updatedAt = datetime.utcnow()
+    db.commit()
+    db.refresh(job)
+
+    return TweakResponse(
+        target="both",
+        generatedCv=job.generatedCv,
+        generatedCl=job.generatedCl,
+        hasOriginal=True,
     )

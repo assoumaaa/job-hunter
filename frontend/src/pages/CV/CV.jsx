@@ -1,21 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-	Eye,
-	Save,
-	Upload,
-	Plus,
-	Trash2,
-	ChevronDown,
-	ChevronUp,
-	FileText,
-	GripVertical,
-} from "lucide-react";
+import { CheckCircle2, Eye, FileText, Plus, Save } from "lucide-react";
+import { Section, Field, ListItem, BulletEditor, TagEditor } from "./FormWidgets";
+import { useEffect, useState } from "react";
 
-import { useAuth } from "@clerk/clerk-react";
-
-import { useCallApi } from "services";
 import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
+import { EmptyState } from "components/ui/empty-state";
+import { PageHeader } from "components/ui/page-header";
+import UploadZone from "./UploadZone";
+import { useAuth } from "@clerk/clerk-react";
+import { useCallApi } from "services";
 
 const EMPTY_CV = {
 	header: { name: "", email: "", phone: "", location: "", linkedin: "", github: "", portfolio: "" },
@@ -26,185 +18,9 @@ const EMPTY_CV = {
 	education: [],
 	certifications: [],
 	skills: [],
+	languages: [],
 };
 
-// ---------------------------------------------------------------------------
-// Drag & drop upload zone
-// ---------------------------------------------------------------------------
-function UploadZone({ onUpload, uploading }) {
-	const [dragOver, setDragOver] = useState(false);
-	const inputRef = useRef(null);
-
-	const handleDrop = useCallback(
-		(e) => {
-			e.preventDefault();
-			setDragOver(false);
-			const file = e.dataTransfer?.files?.[0];
-			if (file && file.type === "application/pdf") onUpload(file);
-		},
-		[onUpload],
-	);
-
-	const handleFileChange = (e) => {
-		const file = e.target.files?.[0];
-		if (file) onUpload(file);
-	};
-
-	return (
-		<div
-			onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-			onDragLeave={() => setDragOver(false)}
-			onDrop={handleDrop}
-			onClick={() => inputRef.current?.click()}
-			className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-				dragOver ? "border-indigo-400 bg-indigo-50" : "border-zinc-300 hover:border-zinc-400 bg-zinc-50"
-			}`}
-		>
-			<input ref={inputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
-			<Upload className={`h-8 w-8 mx-auto mb-3 ${dragOver ? "text-indigo-500" : "text-zinc-400"}`} />
-			{uploading ? (
-				<p className="text-sm text-indigo-600 font-medium">Parsing your CV with AI...</p>
-			) : (
-				<>
-					<p className="text-sm font-medium text-zinc-700">Drop your PDF here or click to browse</p>
-					<p className="text-xs text-zinc-400 mt-1">We'll extract your info automatically using AI</p>
-				</>
-			)}
-		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// Section collapse wrapper
-// ---------------------------------------------------------------------------
-function Section({ title, children, defaultOpen = true }) {
-	const [open, setOpen] = useState(defaultOpen);
-	return (
-		<div className="border border-zinc-200 rounded-lg overflow-hidden">
-			<button
-				onClick={() => setOpen(!open)}
-				className="w-full flex items-center justify-between px-4 py-2.5 bg-zinc-50 hover:bg-zinc-100 transition-colors"
-			>
-				<span className="text-sm font-semibold text-zinc-700">{title}</span>
-				{open ? <ChevronUp className="h-4 w-4 text-zinc-400" /> : <ChevronDown className="h-4 w-4 text-zinc-400" />}
-			</button>
-			{open && <div className="p-4 space-y-3">{children}</div>}
-		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// Small labeled input
-// ---------------------------------------------------------------------------
-function Field({ label, value, onChange, placeholder, type = "text" }) {
-	return (
-		<div className="flex flex-col gap-1">
-			<label className="text-xs font-medium text-zinc-500">{label}</label>
-			<Input
-				type={type}
-				value={value || ""}
-				onChange={(e) => onChange(e.target.value)}
-				placeholder={placeholder}
-				className="text-sm"
-			/>
-		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// Repeatable list item (experience, education, etc.)
-// ---------------------------------------------------------------------------
-function ListItem({ children, onRemove }) {
-	return (
-		<div className="relative group border border-zinc-200 rounded-lg p-3 space-y-2">
-			<button
-				onClick={onRemove}
-				className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity text-zinc-400 hover:text-red-500"
-			>
-				<Trash2 className="h-3.5 w-3.5" />
-			</button>
-			{children}
-		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// Bullet editor (for experience bullets)
-// ---------------------------------------------------------------------------
-function BulletEditor({ bullets, onChange }) {
-	const update = (idx, val) => {
-		const next = [...bullets];
-		next[idx] = val;
-		onChange(next);
-	};
-	const add = () => onChange([...bullets, ""]);
-	const remove = (idx) => onChange(bullets.filter((_, i) => i !== idx));
-
-	return (
-		<div className="space-y-1.5">
-			<label className="text-xs font-medium text-zinc-500">Bullets</label>
-			{bullets.map((b, i) => (
-				<div key={i} className="flex gap-1.5 items-start">
-					<GripVertical className="h-4 w-4 text-zinc-300 mt-2 flex-shrink-0" />
-					<textarea
-						value={b}
-						onChange={(e) => update(i, e.target.value)}
-						rows={1}
-						className="flex-1 text-sm border border-zinc-200 rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
-						style={{ minHeight: 32 }}
-					/>
-					<button onClick={() => remove(i)} className="text-zinc-300 hover:text-red-500 mt-1.5">
-						<Trash2 className="h-3.5 w-3.5" />
-					</button>
-				</div>
-			))}
-			<button onClick={add} className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-1 mt-1">
-				<Plus className="h-3 w-3" /> Add bullet
-			</button>
-		</div>
-	);
-}
-
-// ---------------------------------------------------------------------------
-// Tag editor (for competencies, skill items)
-// ---------------------------------------------------------------------------
-function TagEditor({ tags, onChange, placeholder = "Add..." }) {
-	const [input, setInput] = useState("");
-	const add = () => {
-		if (input.trim()) {
-			onChange([...tags, input.trim()]);
-			setInput("");
-		}
-	};
-	const remove = (idx) => onChange(tags.filter((_, i) => i !== idx));
-
-	return (
-		<div className="space-y-2">
-			<div className="flex flex-wrap gap-1.5">
-				{tags.map((t, i) => (
-					<span key={i} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded-md">
-						{t}
-						<button onClick={() => remove(i)} className="hover:text-red-500">&times;</button>
-					</span>
-				))}
-			</div>
-			<div className="flex gap-1.5">
-				<Input
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-					placeholder={placeholder}
-					className="text-sm flex-1"
-				/>
-				<Button variant="outline" size="sm" onClick={add}>Add</Button>
-			</div>
-		</div>
-	);
-}
-
-// ===========================================================================
-// Main CV Page
-// ===========================================================================
 export default function CV() {
 	const [cv, setCv] = useState(EMPTY_CV);
 	const [pdfUrl, setPdfUrl] = useState(null);
@@ -217,12 +33,12 @@ export default function CV() {
 	const [callApi] = useCallApi();
 	const { getToken } = useAuth();
 
-	// Load existing CV
 	useEffect(() => {
 		callApi("/cv", {
 			onSuccess: (d) => {
 				if (d.structuredData) {
-					const parsed = typeof d.structuredData === "string" ? JSON.parse(d.structuredData) : d.structuredData;
+					const parsed =
+						typeof d.structuredData === "string" ? JSON.parse(d.structuredData) : d.structuredData;
 					setCv({ ...EMPTY_CV, ...parsed });
 					setHasData(true);
 				}
@@ -230,7 +46,6 @@ export default function CV() {
 		});
 	}, []);
 
-	// Helper to update nested state
 	const updateHeader = (field, value) => setCv((p) => ({ ...p, header: { ...p.header, [field]: value } }));
 
 	const updateExperience = (idx, field, value) => {
@@ -241,17 +56,15 @@ export default function CV() {
 		});
 	};
 
-	// Save
 	const save = async () => {
 		setSaving(true);
-		await callApi("/cv", { method: "post", json: { structuredData: cv }, success: "CV saved!" });
+		await callApi("/cv", { method: "post", json: { structuredData: cv }, success: "CV saved" });
 		setSaved(true);
 		setHasData(true);
 		setTimeout(() => setSaved(false), 2000);
 		setSaving(false);
 	};
 
-	// Upload PDF
 	const handleUpload = async (file) => {
 		setUploading(true);
 		try {
@@ -276,7 +89,6 @@ export default function CV() {
 		}
 	};
 
-	// Compile to PDF preview
 	const compile = async () => {
 		setCompiling(true);
 		if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -299,73 +111,69 @@ export default function CV() {
 	};
 
 	return (
-		<div className="flex flex-col h-full p-6 gap-4 overflow-hidden">
-			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-xl font-semibold">My CV</h1>
-					<p className="text-sm text-zinc-500 mt-0.5">Upload a PDF or edit your CV sections below</p>
-				</div>
-				<div className="flex gap-2">
-					<Button variant="outline" onClick={save} disabled={saving}>
-						<Save className="h-4 w-4 mr-2" />
-						{saved ? "Saved!" : saving ? "Saving..." : "Save"}
-					</Button>
-					<Button onClick={compile} disabled={compiling || !hasData}>
-						<Eye className="h-4 w-4 mr-2" />
-						{compiling ? "Generating..." : "Preview PDF"}
-					</Button>
-				</div>
-			</div>
+		<div className="flex flex-col h-full overflow-hidden">
+			<PageHeader
+				title="My CV"
+				subtitle="Upload a PDF or edit sections inline"
+				actions={
+					<>
+						<Button variant="outline" size="sm" onClick={save} disabled={saving}>
+							{saved ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Save className="h-3.5 w-3.5" />}
+							{saved ? "Saved" : saving ? "Saving…" : "Save"}
+						</Button>
+						<Button variant="primary" size="sm" onClick={compile} disabled={compiling || !hasData}>
+							<Eye className="h-3.5 w-3.5" />
+							{compiling ? "Generating…" : "Preview PDF"}
+						</Button>
+					</>
+				}
+			/>
 
-			{/* Main content */}
-			<div className="flex gap-4 flex-1 min-h-0">
-				{/* Left: editor */}
-				<div className="flex-1 overflow-y-auto space-y-3 pr-1">
-					{/* Upload zone */}
+			<div className="flex gap-4 flex-1 min-h-0 p-4">
+				{/* Editor */}
+				<div className="flex-1 overflow-y-auto space-y-3 pr-1 max-w-[700px]">
 					<UploadZone onUpload={handleUpload} uploading={uploading} />
 
-					{/* Contact / header */}
-					<Section title="Contact Information">
+					<Section title="Contact information">
 						<div className="grid grid-cols-2 gap-3">
-							<Field label="Full Name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="John Doe" />
+							<Field label="Full name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="John Doe" />
 							<Field label="Email" value={cv.header.email} onChange={(v) => updateHeader("email", v)} placeholder="john@example.com" />
 							<Field label="Phone" value={cv.header.phone} onChange={(v) => updateHeader("phone", v)} placeholder="+1 555 000 0000" />
 							<Field label="Location" value={cv.header.location} onChange={(v) => updateHeader("location", v)} placeholder="Berlin, Germany" />
-							<Field label="LinkedIn URL" value={cv.header.linkedin} onChange={(v) => updateHeader("linkedin", v)} placeholder="https://linkedin.com/in/..." />
-							<Field label="GitHub URL" value={cv.header.github} onChange={(v) => updateHeader("github", v)} placeholder="https://github.com/..." />
+							<Field label="LinkedIn URL" value={cv.header.linkedin} onChange={(v) => updateHeader("linkedin", v)} placeholder="https://linkedin.com/in/…" />
+							<Field label="GitHub URL" value={cv.header.github} onChange={(v) => updateHeader("github", v)} placeholder="https://github.com/…" />
 							<Field label="Portfolio URL" value={cv.header.portfolio} onChange={(v) => updateHeader("portfolio", v)} placeholder="https://yoursite.dev" />
 						</div>
 					</Section>
 
-					{/* Summary */}
-					<Section title="Professional Summary">
+					<Section title="Professional summary">
 						<textarea
 							value={cv.summary}
 							onChange={(e) => setCv((p) => ({ ...p, summary: e.target.value }))}
 							rows={3}
-							placeholder="Brief professional summary (2-3 sentences)..."
-							className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-indigo-300"
+							placeholder="Brief professional summary (2–3 sentences)…"
+							className="w-full text-[13px] border border-zinc-200 rounded-lg px-3 py-2 resize-none focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 hover:border-zinc-300 transition-colors leading-relaxed"
 						/>
 					</Section>
 
-					{/* Competencies */}
-					<Section title="Core Competencies" defaultOpen={false}>
+					<Section title="Core competencies" defaultOpen={false}>
 						<TagEditor
 							tags={cv.competencies}
 							onChange={(v) => setCv((p) => ({ ...p, competencies: v }))}
-							placeholder="Add a competency (e.g. Distributed Systems)"
+							placeholder="e.g. Distributed Systems"
 						/>
 					</Section>
 
-					{/* Experience */}
-					<Section title="Work Experience">
+					<Section title="Work experience" hint={`${cv.experience.length} entries`}>
 						{cv.experience.map((exp, i) => (
-							<ListItem key={i} onRemove={() => setCv((p) => ({ ...p, experience: p.experience.filter((_, j) => j !== i) }))}>
-								<div className="grid grid-cols-2 gap-2">
-									<Field label="Company" value={exp.company} onChange={(v) => updateExperience(i, "company", v)} />
-									<Field label="Job Title" value={exp.title} onChange={(v) => updateExperience(i, "title", v)} />
-									<Field label="Period" value={exp.period} onChange={(v) => updateExperience(i, "period", v)} placeholder="Jan 2022 - Present" />
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, experience: p.experience.filter((_, j) => j !== i) }))}
+							>
+								<div className="grid grid-cols-2 gap-2.5">
+									<Field label="Company"  value={exp.company}  onChange={(v) => updateExperience(i, "company", v)} />
+									<Field label="Job title" value={exp.title}   onChange={(v) => updateExperience(i, "title", v)} />
+									<Field label="Period"   value={exp.period}   onChange={(v) => updateExperience(i, "period", v)} placeholder="Jan 2022 – Present" />
 									<Field label="Location" value={exp.location} onChange={(v) => updateExperience(i, "location", v)} placeholder="Remote" />
 								</div>
 								<BulletEditor bullets={exp.bullets || []} onChange={(v) => updateExperience(i, "bullets", v)} />
@@ -374,22 +182,41 @@ export default function CV() {
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCv((p) => ({ ...p, experience: [...p.experience, { company: "", title: "", period: "", location: "", bullets: [""] }] }))}
+							onClick={() =>
+								setCv((p) => ({
+									...p,
+									experience: [...p.experience, { company: "", title: "", period: "", location: "", bullets: [""] }],
+								}))
+							}
 						>
-							<Plus className="h-3.5 w-3.5 mr-1" /> Add Experience
+							<Plus className="h-3.5 w-3.5" /> Add experience
 						</Button>
 					</Section>
 
-					{/* Projects */}
-					<Section title="Projects" defaultOpen={false}>
+					<Section title="Projects" hint={`${cv.projects.length} entries`} defaultOpen={false}>
 						{cv.projects.map((proj, i) => (
-							<ListItem key={i} onRemove={() => setCv((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))}>
-								<div className="grid grid-cols-2 gap-2">
-									<Field label="Name" value={proj.name} onChange={(v) => { const next = [...cv.projects]; next[i] = { ...next[i], name: v }; setCv((p) => ({ ...p, projects: next })); }} />
-									<Field label="Badge" value={proj.badge} onChange={(v) => { const next = [...cv.projects]; next[i] = { ...next[i], badge: v }; setCv((p) => ({ ...p, projects: next })); }} placeholder="Open Source" />
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))}
+							>
+								<div className="grid grid-cols-2 gap-2.5">
+									<Field label="Name" value={proj.name} onChange={(v) => {
+										const next = [...cv.projects]; next[i] = { ...next[i], name: v };
+										setCv((p) => ({ ...p, projects: next }));
+									}} />
+									<Field label="Badge" value={proj.badge} onChange={(v) => {
+										const next = [...cv.projects]; next[i] = { ...next[i], badge: v };
+										setCv((p) => ({ ...p, projects: next }));
+									}} placeholder="Open Source" />
 								</div>
-								<Field label="Description" value={proj.description} onChange={(v) => { const next = [...cv.projects]; next[i] = { ...next[i], description: v }; setCv((p) => ({ ...p, projects: next })); }} />
-								<Field label="Tech Stack" value={proj.tech} onChange={(v) => { const next = [...cv.projects]; next[i] = { ...next[i], tech: v }; setCv((p) => ({ ...p, projects: next })); }} placeholder="Python, React, PostgreSQL" />
+								<Field label="Description" value={proj.description} onChange={(v) => {
+									const next = [...cv.projects]; next[i] = { ...next[i], description: v };
+									setCv((p) => ({ ...p, projects: next }));
+								}} />
+								<Field label="Tech stack" value={proj.tech} onChange={(v) => {
+									const next = [...cv.projects]; next[i] = { ...next[i], tech: v };
+									setCv((p) => ({ ...p, projects: next }));
+								}} placeholder="Python, React, PostgreSQL" />
 							</ListItem>
 						))}
 						<Button
@@ -397,19 +224,33 @@ export default function CV() {
 							size="sm"
 							onClick={() => setCv((p) => ({ ...p, projects: [...p.projects, { name: "", badge: "", description: "", tech: "" }] }))}
 						>
-							<Plus className="h-3.5 w-3.5 mr-1" /> Add Project
+							<Plus className="h-3.5 w-3.5" /> Add project
 						</Button>
 					</Section>
 
-					{/* Education */}
-					<Section title="Education" defaultOpen={false}>
+					<Section title="Education" hint={`${cv.education.length} entries`} defaultOpen={false}>
 						{cv.education.map((edu, i) => (
-							<ListItem key={i} onRemove={() => setCv((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}>
-								<div className="grid grid-cols-2 gap-2">
-									<Field label="Degree" value={edu.degree} onChange={(v) => { const next = [...cv.education]; next[i] = { ...next[i], degree: v }; setCv((p) => ({ ...p, education: next })); }} />
-									<Field label="Institution" value={edu.institution} onChange={(v) => { const next = [...cv.education]; next[i] = { ...next[i], institution: v }; setCv((p) => ({ ...p, education: next })); }} />
-									<Field label="Year" value={edu.year} onChange={(v) => { const next = [...cv.education]; next[i] = { ...next[i], year: v }; setCv((p) => ({ ...p, education: next })); }} placeholder="2019" />
-									<Field label="Description" value={edu.description} onChange={(v) => { const next = [...cv.education]; next[i] = { ...next[i], description: v }; setCv((p) => ({ ...p, education: next })); }} placeholder="Optional" />
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}
+							>
+								<div className="grid grid-cols-2 gap-2.5">
+									<Field label="Degree" value={edu.degree} onChange={(v) => {
+										const next = [...cv.education]; next[i] = { ...next[i], degree: v };
+										setCv((p) => ({ ...p, education: next }));
+									}} />
+									<Field label="Institution" value={edu.institution} onChange={(v) => {
+										const next = [...cv.education]; next[i] = { ...next[i], institution: v };
+										setCv((p) => ({ ...p, education: next }));
+									}} />
+									<Field label="Year" value={edu.year} onChange={(v) => {
+										const next = [...cv.education]; next[i] = { ...next[i], year: v };
+										setCv((p) => ({ ...p, education: next }));
+									}} placeholder="2019" />
+									<Field label="Description" value={edu.description} onChange={(v) => {
+										const next = [...cv.education]; next[i] = { ...next[i], description: v };
+										setCv((p) => ({ ...p, education: next }));
+									}} placeholder="Optional" />
 								</div>
 							</ListItem>
 						))}
@@ -418,18 +259,29 @@ export default function CV() {
 							size="sm"
 							onClick={() => setCv((p) => ({ ...p, education: [...p.education, { degree: "", institution: "", year: "", description: "" }] }))}
 						>
-							<Plus className="h-3.5 w-3.5 mr-1" /> Add Education
+							<Plus className="h-3.5 w-3.5" /> Add education
 						</Button>
 					</Section>
 
-					{/* Certifications */}
-					<Section title="Certifications" defaultOpen={false}>
+					<Section title="Certifications" hint={`${cv.certifications.length} entries`} defaultOpen={false}>
 						{cv.certifications.map((cert, i) => (
-							<ListItem key={i} onRemove={() => setCv((p) => ({ ...p, certifications: p.certifications.filter((_, j) => j !== i) }))}>
-								<div className="grid grid-cols-3 gap-2">
-									<Field label="Title" value={cert.title} onChange={(v) => { const next = [...cv.certifications]; next[i] = { ...next[i], title: v }; setCv((p) => ({ ...p, certifications: next })); }} />
-									<Field label="Organization" value={cert.org} onChange={(v) => { const next = [...cv.certifications]; next[i] = { ...next[i], org: v }; setCv((p) => ({ ...p, certifications: next })); }} />
-									<Field label="Year" value={cert.year} onChange={(v) => { const next = [...cv.certifications]; next[i] = { ...next[i], year: v }; setCv((p) => ({ ...p, certifications: next })); }} />
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, certifications: p.certifications.filter((_, j) => j !== i) }))}
+							>
+								<div className="grid grid-cols-3 gap-2.5">
+									<Field label="Title" value={cert.title} onChange={(v) => {
+										const next = [...cv.certifications]; next[i] = { ...next[i], title: v };
+										setCv((p) => ({ ...p, certifications: next }));
+									}} />
+									<Field label="Organization" value={cert.org} onChange={(v) => {
+										const next = [...cv.certifications]; next[i] = { ...next[i], org: v };
+										setCv((p) => ({ ...p, certifications: next }));
+									}} />
+									<Field label="Year" value={cert.year} onChange={(v) => {
+										const next = [...cv.certifications]; next[i] = { ...next[i], year: v };
+										setCv((p) => ({ ...p, certifications: next }));
+									}} />
 								</div>
 							</ListItem>
 						))}
@@ -438,25 +290,24 @@ export default function CV() {
 							size="sm"
 							onClick={() => setCv((p) => ({ ...p, certifications: [...p.certifications, { title: "", org: "", year: "" }] }))}
 						>
-							<Plus className="h-3.5 w-3.5 mr-1" /> Add Certification
+							<Plus className="h-3.5 w-3.5" /> Add certification
 						</Button>
 					</Section>
 
-					{/* Skills */}
-					<Section title="Skills" defaultOpen={false}>
+					<Section title="Skills" hint={`${cv.skills.length} categories`} defaultOpen={false}>
 						{cv.skills.map((skill, i) => (
-							<ListItem key={i} onRemove={() => setCv((p) => ({ ...p, skills: p.skills.filter((_, j) => j !== i) }))}>
-								<Field
-									label="Category"
-									value={skill.category}
-									onChange={(v) => { const next = [...cv.skills]; next[i] = { ...next[i], category: v }; setCv((p) => ({ ...p, skills: next })); }}
-									placeholder="Languages, Frameworks, Tools..."
-								/>
-								<TagEditor
-									tags={skill.items || []}
-									onChange={(v) => { const next = [...cv.skills]; next[i] = { ...next[i], items: v }; setCv((p) => ({ ...p, skills: next })); }}
-									placeholder="Add skill"
-								/>
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, skills: p.skills.filter((_, j) => j !== i) }))}
+							>
+								<Field label="Category" value={skill.category} onChange={(v) => {
+									const next = [...cv.skills]; next[i] = { ...next[i], category: v };
+									setCv((p) => ({ ...p, skills: next }));
+								}} placeholder="Languages, Frameworks, Tools…" />
+								<TagEditor tags={skill.items || []} onChange={(v) => {
+									const next = [...cv.skills]; next[i] = { ...next[i], items: v };
+									setCv((p) => ({ ...p, skills: next }));
+								}} placeholder="Add skill" />
 							</ListItem>
 						))}
 						<Button
@@ -464,26 +315,50 @@ export default function CV() {
 							size="sm"
 							onClick={() => setCv((p) => ({ ...p, skills: [...p.skills, { category: "", items: [] }] }))}
 						>
-							<Plus className="h-3.5 w-3.5 mr-1" /> Add Skill Category
+							<Plus className="h-3.5 w-3.5" /> Add skill category
 						</Button>
 					</Section>
 
-					{/* Spacer at bottom for scroll comfort */}
+					<Section title="Languages" hint={`${cv.languages.length} entries`} defaultOpen={false}>
+						{cv.languages.map((lang, i) => (
+							<ListItem
+								key={i}
+								onRemove={() => setCv((p) => ({ ...p, languages: p.languages.filter((_, j) => j !== i) }))}
+							>
+								<div className="grid grid-cols-2 gap-2.5">
+									<Field label="Language" value={lang.name} onChange={(v) => {
+										const next = [...cv.languages]; next[i] = { ...next[i], name: v };
+										setCv((p) => ({ ...p, languages: next }));
+									}} placeholder="English" />
+									<Field label="Level" value={lang.level} onChange={(v) => {
+										const next = [...cv.languages]; next[i] = { ...next[i], level: v };
+										setCv((p) => ({ ...p, languages: next }));
+									}} placeholder="Fluent, Native, Conversational…" />
+								</div>
+							</ListItem>
+						))}
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => setCv((p) => ({ ...p, languages: [...p.languages, { name: "", level: "" }] }))}
+						>
+							<Plus className="h-3.5 w-3.5" /> Add language
+						</Button>
+					</Section>
+
 					<div className="h-8" />
 				</div>
 
-				{/* Right: PDF preview */}
-				<div className="flex-1 rounded-xl overflow-hidden border border-zinc-200 bg-zinc-50 flex flex-col">
+				{/* Preview */}
+				<div className="flex-1 rounded-xl overflow-hidden border border-zinc-200/80 bg-zinc-50 flex flex-col shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
 					{pdfUrl ? (
 						<iframe src={pdfUrl} className="w-full h-full border-none" title="CV Preview" />
 					) : (
-						<div className="flex flex-col items-center justify-center h-full text-zinc-400 gap-3">
-							<FileText className="h-12 w-12 opacity-30" />
-							<div className="text-center">
-								<p className="text-sm font-medium">No preview yet</p>
-								<p className="text-xs mt-1">Upload a PDF or fill in your details, then click Preview PDF</p>
-							</div>
-						</div>
+						<EmptyState
+							icon={FileText}
+							title="No preview yet"
+							description="Upload a PDF or fill in your details, then click Preview PDF to see a live preview."
+						/>
 					)}
 				</div>
 			</div>

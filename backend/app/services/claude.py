@@ -5,9 +5,13 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+import logging
+
 import anthropic
 
 from ..core.config import settings
+
+logger = logging.getLogger(__name__)
 
 client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
@@ -15,7 +19,7 @@ client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 # Model selection: Haiku for cheap bulk screening, Sonnet for quality generation
 # ---------------------------------------------------------------------------
 SCREENING_MODEL = "claude-haiku-4-5-20251001"
-GENERATION_MODEL = "claude-haiku-4-5-20251001"
+GENERATION_MODEL = "claude-sonnet-4-6"
 
 # ---------------------------------------------------------------------------
 # Forbidden words/phrases for generated text
@@ -70,70 +74,103 @@ ARCHETYPE_GENERATION_HINTS = {
 # ---------------------------------------------------------------------------
 # Generation system prompt
 # ---------------------------------------------------------------------------
-AGENT_SYSTEM_PROMPT = f"""You are a professional CV writer and ATS optimization expert. You generate tailored resumes and cover letters.
+AGENT_SYSTEM_PROMPT = f"""You are a professional CV writer and ATS optimization expert.
 
-CANDIDATE WORK HISTORY (NEVER reorder jobs -- strict reverse chronological):
-1. Odoo -- client-facing, enterprise implementations, technical escalations
-  Dynamic title rule for Odoo ONLY: if target job is Software Engineer / Full-Stack / Frontend / Backend / Developer -> use "Software Engineer"; otherwise (Solutions, Consulting, Pre-Sales, Implementation, etc.) -> use "Technical Solutions Consultant"
-2. Meikosoft -- pure backend, high-volume transactions, IoT (title NEVER changes)
-3. Edenred (title NEVER changes)
-NEVER change any other job title, company name, or employment date.
+## STEP 1: EXTRACT KEYWORDS
+Extract 15-20 keywords/phrases from the JD. These are the exact terms the ATS will scan for.
 
-WRITER MODE RULES:
-- PRESERVE the base CV structure exactly -- same sections, same roles, same order
+## STEP 2: DETECT ARCHETYPE
+Classify the role into one (or hybrid of two):
+
+| Archetype | Signals in JD |
+|-----------|---------------|
+| Backend / Systems | "distributed systems", "APIs", "databases", "performance", "reliability" |
+| Frontend / UI | "React", "component", "accessibility", "user-facing" |
+| Full-Stack | "end-to-end", "both client and server", "full-stack" |
+| DevOps / Platform | "CI/CD", "infrastructure", "monitoring", "cloud", "SRE" |
+| Data / ML / AI | "data pipelines", "ML", "LLM", "analytics", "vector" |
+| Solutions / Consulting | "client-facing", "integrations", "enterprise", "demos", "pre-sales" |
+| Forward Deployed | "deploy", "prototype", "field", "fast delivery", "client site" |
+| Product Manager | "PRD", "roadmap", "discovery", "stakeholder" |
+
+## STEP 3: TAILOR CV
+
+### 1-PAGE CONSTRAINT (CRITICAL)
+The output CV MUST fit on exactly 1 page. This overrides everything else:
+- Summary: max 2-3 lines (~200 characters)
+- Bullets can wrap to 2 lines — that's fine. But avoid wrapping where just 1-2 words spill to line 2. Either make it fit 1 line or fill out 2 full lines with more useful detail.
+- If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
+- Keep education and certifications concise (1 line each)
+- Skills: 3 categories max (do NOT put Languages in skills — languages are handled separately). Each category should fit on 1 line.
+
+### Structure rules
+- PRESERVE the same jobs in the same reverse-chronological order
 - BULLET COUNT IS FIXED: keep the exact same number of bullets per role as the base CV -- never add or remove bullets
-- SPATIAL CONSTRAINT: Experience section must not exceed 25 lines total. If Odoo has 6 bullets, at least 4 must be single-line bullets. Prioritize conciseness over detail.
-- BULLET LENGTH: max 1 line per bullet unless it was already 2 lines in the base CV -- never expand
-- Allowed changes: rephrase bullet wording to match JD keywords, reorder bullets within a role (most relevant first), update Summary (max 2 lines), adjust Skill keywords
-- Never invent projects, metrics, or experience not in the base CV
-- The base CV fits exactly 1 page -- any addition will overflow. Do not add anything.
+- NEVER invent projects, metrics, or experience not in the base CV
 
-KEYWORD INJECTION (ethical, truth-based reformulation):
-When the JD uses specific terminology, reformulate EXISTING experience to match. Examples:
-- JD says "CI/CD pipelines" and CV says "automated deployment" -> "CI/CD pipeline automation"
-- JD says "stakeholder management" and CV says "collaborated with teams" -> "stakeholder management across engineering, product, and operations"
-- JD says "RESTful APIs" and CV says "built web services" -> "designed and shipped RESTful APIs"
-- JD says "observability" and CV says "monitoring and logging" -> "observability (monitoring, logging, alerting)"
-NEVER add skills or experience the candidate does not have. Only reformulate what exists.
+### Dynamic title rule (Odoo ONLY)
+If target job is Software Engineer / Full-Stack / Frontend / Backend / Developer -> use "Software Engineer"
+Otherwise (Solutions, Consulting, Pre-Sales, Implementation, etc.) -> use "Technical Solutions Consultant"
+All other job titles NEVER change.
 
-VARY SENTENCE STRUCTURE:
-- Don't start every bullet with the same verb pattern
+### Keyword injection strategy (ethical, truth-based)
+Distribute the extracted keywords deliberately:
+- Summary: inject top 5 keywords naturally
+- First bullet of each role: inject 1-2 keywords
+- Skills section: mirror JD terminology exactly
+- Reformulate existing experience with JD vocabulary. Examples:
+  - JD says "CI/CD pipelines", CV says "automated deployment" -> "CI/CD pipeline automation"
+  - JD says "stakeholder management", CV says "collaborated with teams" -> "stakeholder management across engineering, product, and operations"
+  - JD says "RESTful APIs", CV says "built web services" -> "designed and shipped RESTful APIs"
+  - JD says "RAG pipelines", CV says "LLM workflows with retrieval" -> "RAG pipeline design and LLM orchestration"
+NEVER add skills the candidate does not have. Only reformulate what exists.
+
+### Archetype-based framing
+Reorder bullets within each role so the most relevant to the detected archetype come first.
+Frame the summary to position the candidate for this specific archetype.
+
+### Summary rules (CRITICAL)
+- NEVER copy the target job title as if it is the candidate's current role (e.g. don't say "Forward Deployed Engineer with 4 years...")
+- Choose the summary descriptor that honestly reflects the candidate's experience while aligning with the role:
+  - Role requires building/deploying production software -> "Software Engineer"
+  - Role is solutions/consulting/client-facing/integration-focused -> "Solutions Engineer"
+  - Role is pre-sales/implementation/consulting with no production code -> "Technical Solutions Consultant"
+- Read the JD requirements carefully and use your judgment. The candidate has experience as both a Software Engineer and a client-facing consultant, so either descriptor is truthful — pick the one that best fits the target role.
+
+### Writing quality
+- Prefer specifics: "Cut p95 latency from 2.1s to 380ms" beats "improved performance"
+- Name tools, projects, metrics when possible
+- Vary sentence structure: don't start every bullet the same way
 - Mix sentence lengths: short. Then longer with context. Short again.
-- Don't always use "X, Y, and Z" -- sometimes two items, sometimes four
+- No passive voice. Action verbs, direct language.
 
-COVER LETTER RULES:
+## STEP 4: COVER LETTER
 - Max 300 words. P1 hook, P2 2-3 metrics, P3 close.
 - Bold key metrics and company/role names using **bold**.
-- Use the candidate's LinkedIn/GitHub URLs from the profile if provided -- never guess or invent URLs.
-- TONE: Position as "I'm choosing you" -- the candidate has options and is selecting this company for specific reasons.
-- Lead with proof, not claims: "I built X that does Y" not "I'm great at X"
+- TONE: "I'm choosing you" -- candidate has options and is selecting this company for specific reasons.
+- Lead with proof: "I built X that does Y" not "I'm great at X"
 - Reference something SPECIFIC from the JD and map it to something SPECIFIC from the CV.
+- Use the candidate's LinkedIn/GitHub URLs if provided. Never invent URLs.
 - No generic "I would love the opportunity" -- name the actual reason.
 
-ATS SCORING (total 100):
-- Keyword match: 40pts
-- Experience alignment: 25pts
-- Skills coverage: 15pts
-- Format: 10pts
-- Impact: 10pts
+## FORBIDDEN
+Words: {', '.join(FORBIDDEN_WORDS)}
+Phrases: {' | '.join(FORBIDDEN_PHRASES)}
+Style: No em dashes, semicolons, exclamation marks. No hedging. No corporate-speak.
 
-DECISION LOGIC:
-- >=85 -> APPROVED
-- 70-84 -> NEEDS_REVISION
-- <70 -> REJECTED
+## OUTPUT FORMAT (strict)
 
-FORBIDDEN WORDS: {', '.join(FORBIDDEN_WORDS)}
-FORBIDDEN PHRASES: {' | '.join(FORBIDDEN_PHRASES)}
-FORBIDDEN STYLE: No em dashes, semicolons, exclamation marks. No generic openings. No hedging.
+## KEYWORDS
+[comma-separated list of 15-20 extracted JD keywords]
 
-OUTPUT FORMAT (strict):
+## ARCHETYPE
+[detected archetype name]
+
 ## RESUME
-A JSON object with these fields (no markdown fences, just raw JSON):
 {{
-  "summary": "tailored professional summary (max 2 lines)",
-  "competencies": ["keyword phrase 1", "keyword phrase 2", ... (6-8 from JD matching candidate skills)],
+  "summary": "...",
   "experience": [
-    {{"company": "...", "title": "...", "location": "...", "period": "...", "bullets": ["...", "..."]}}
+    {{"company": "...", "title": "...", "location": "...", "period": "...", "bullets": ["..."]}}
   ],
   "projects": [
     {{"name": "...", "badge": "...", "description": "...", "tech": "..."}}
@@ -145,22 +182,14 @@ A JSON object with these fields (no markdown fences, just raw JSON):
     {{"title": "...", "org": "...", "year": "..."}}
   ],
   "skills": [
-    {{"category": "...", "items": ["...", "..."]}}
+    {{"category": "...", "items": ["..."]}}
   ]
 }}
 
-IMPORTANT: The experience array must have the SAME jobs in the SAME order as the base CV. Each job must have the SAME number of bullets. Only rephrase wording and reorder bullets within each job.
-
 ## COVER LETTER
-[cover letter text, plain -- sign off with the candidate's real name, never use placeholders like [Candidate Name] or [Your Name]]
+[plain text, sign off with candidate's real name]
 
-## ATS SCORE
-Score: [number]/100
-Keyword: [n]/40 | Experience: [n]/25 | Skills: [n]/15 | Format: [n]/10 | Impact: [n]/10
-Decision: APPROVED | NEEDS_REVISION | REJECTED
-Gaps: [comma separated missing keywords or requirements]
-
-Terse. No explanations, no chatter.
+Terse. No explanations, no chatter. Do NOT self-score — scoring happens externally.
 """
 
 
@@ -196,56 +225,87 @@ def _strip_fences(s: str) -> str:
     )
 
 
+def _extract_json(text: str) -> dict:
+    """Extract the first valid JSON object from text, handling code fences."""
+    stripped = _strip_fences(text)
+    try:
+        return json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Find the outermost { ... } with balanced braces
+    depth = 0
+    start = None
+    for i, c in enumerate(stripped):
+        if c == '{':
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    return json.loads(stripped[start:i + 1])
+                except json.JSONDecodeError:
+                    start = None
+    return {}
+
+
 def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
     resume_match = re.search(
         r"##\s*RESUME\s*\n([\s\S]*?)(?=##\s*COVER LETTER)", text, re.IGNORECASE
     )
+    # Cover letter goes to end of text (no trailing ATS section anymore)
     cl_match = re.search(
-        r"##\s*COVER LETTER\s*\n([\s\S]*?)(?=##\s*ATS SCORE)", text, re.IGNORECASE
+        r"##\s*COVER LETTER\s*\n([\s\S]*?)$", text, re.IGNORECASE
     )
-    ats_match = re.search(r"##\s*ATS SCORE\s*\n([\s\S]*?)$", text, re.IGNORECASE)
 
-    # Parse resume as JSON
-    resume_raw = _strip_fences(resume_match.group(1) if resume_match else "{}")
-    try:
-        resume_data = json.loads(resume_raw)
-    except json.JSONDecodeError:
-        # Try to extract JSON object from within the text
-        json_match = re.search(r"\{[\s\S]*\}", resume_raw)
-        if json_match:
-            resume_data = json.loads(json_match.group(0))
+    # Extract keywords and archetype (informational, stored for logging)
+    kw_match = re.search(r"##\s*KEYWORDS\s*\n(.*?)(?=##)", text, re.IGNORECASE | re.DOTALL)
+    arch_match = re.search(r"##\s*ARCHETYPE\s*\n(.*?)(?=##)", text, re.IGNORECASE | re.DOTALL)
+    if kw_match:
+        logger.info("Extracted keywords: %s", kw_match.group(1).strip()[:200])
+    if arch_match:
+        logger.info("Detected archetype: %s", arch_match.group(1).strip())
+
+    # If section headers are missing, try to extract JSON directly from the full text
+    if not resume_match:
+        resume_data = _extract_json(text)
+    else:
+        resume_data = _extract_json(resume_match.group(1))
+
+    if not resume_data.get("experience"):
+        logger.warning("Resume data missing experience. Keys: %s", list(resume_data.keys()))
+
+    # Cover letter: if no section header, find text after the JSON block
+    if cl_match:
+        cover_letter = _strip_fences(cl_match.group(1))
+    elif not resume_match:
+        depth = 0
+        json_end = 0
+        for i, c in enumerate(text):
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    json_end = i + 1
+                    break
+        if json_end:
+            remainder = text[json_end:]
+            remainder = re.sub(r"^```\s*", "", remainder.strip(), flags=re.MULTILINE)
+            cl_text = re.sub(r"^##\s*COVER LETTER\s*\n?", "", remainder, flags=re.IGNORECASE).strip()
         else:
-            resume_data = {}
+            cl_text = ""
+        cover_letter = cl_text
+    else:
+        cover_letter = ""
 
-    cover_letter = _strip_fences(cl_match.group(1) if cl_match else "")
-    ats_block = ats_match.group(1).strip() if ats_match else ""
-
-    score_m = re.search(r"Score:\s*(\d+)", ats_block)
-    keyword_m = re.search(r"Keyword:\s*(\d+)", ats_block)
-    experience_m = re.search(r"Experience:\s*(\d+)", ats_block)
-    skills_m = re.search(r"Skills:\s*(\d+)", ats_block)
-    format_m = re.search(r"Format:\s*(\d+)", ats_block)
-    impact_m = re.search(r"Impact:\s*(\d+)", ats_block)
-    decision_m = re.search(r"Decision:\s*(APPROVED|NEEDS_REVISION|REJECTED)", ats_block)
-    gaps_m = re.search(r"Gaps:\s*(.+)", ats_block)
-
-    gaps = (
-        [g.strip() for g in gaps_m.group(1).split(",") if g.strip()] if gaps_m else []
-    )
-
+    # Score is not parsed from the generator anymore — see ats_scorer
     return GenerationResult(
         resume=resume_data,
         cover_letter=cover_letter,
-        ats_score=int(score_m.group(1)) if score_m else 0,
-        ats_breakdown=AtsBreakdown(
-            keyword=int(keyword_m.group(1)) if keyword_m else 0,
-            experience=int(experience_m.group(1)) if experience_m else 0,
-            skills=int(skills_m.group(1)) if skills_m else 0,
-            format=int(format_m.group(1)) if format_m else 0,
-            impact=int(impact_m.group(1)) if impact_m else 0,
-            decision=decision_m.group(1) if decision_m else "NEEDS_REVISION",
-            gaps=gaps,
-        ),
+        ats_score=0,
+        ats_breakdown=AtsBreakdown(),
         pass_num=pass_num,
     )
 
@@ -267,6 +327,7 @@ def generate_cv_and_cl(
     github_url: Optional[str] = None,
     archetype: Optional[str] = None,
     narrative: Optional[str] = None,
+    reviewer_feedback: Optional[str] = None,
 ) -> GenerationResult:
     profile = profile_context or ""
     name = candidate_name or "Candidate"
@@ -282,7 +343,7 @@ def generate_cv_and_cl(
         else ""
     )
 
-    # Build archetype-specific hint
+    # Build archetype-specific hint (per-job — stays in user message)
     archetype_hint = ""
     if archetype and archetype in ARCHETYPE_GENERATION_HINTS:
         archetype_hint = (
@@ -291,7 +352,7 @@ def generate_cv_and_cl(
             f"Adapt the Professional Summary, bullet reordering, and cover letter framing to this archetype."
         )
 
-    # Build narrative context
+    # Build narrative context (user-level — goes in cached system block)
     narrative_block = ""
     if narrative:
         narrative_block = (
@@ -300,23 +361,37 @@ def generate_cv_and_cl(
 
     base_cv_str = json.dumps(base_cv, indent=2)
 
+    # User-stable context: name, URLs, profile, narrative, base CV.
+    # Identical across all jobs for this user → second cache breakpoint.
+    candidate_context = (
+        f"CANDIDATE NAME: {name}"
+        f"{url_instruction}"
+        f"\n\n{profile}"
+        f"{narrative_block}"
+        f"\n\nMY BASE CV (structured JSON):\n{base_cv_str}"
+    )
+
     if pass_num == 1:
         user_message = (
-            f"CANDIDATE NAME: {name}\nJOB: {job_title} at {company}\n\n"
-            f"JOB DESCRIPTION:\n{job_description}\n{profile}{archetype_hint}{narrative_block}{url_instruction}\n"
-            f"MY BASE CV (structured JSON):\n{base_cv_str}\n\n"
-            f"Generate tailored resume JSON + cover letter + ATS score. IMPORTANT: Keep the same jobs, same bullet counts. Only rephrase wording and reorder bullets within each job."
+            f"JOB: {job_title} at {company}\n\n"
+            f"JOB DESCRIPTION:\n{job_description}{archetype_hint}\n\n"
+            f"Generate tailored resume JSON + cover letter. IMPORTANT: Keep the same jobs, same bullet counts. Only rephrase wording and reorder bullets within each job."
         )
     else:
         prev_str = json.dumps(previous_resume, indent=2) if isinstance(previous_resume, dict) else str(previous_resume)
+        feedback_block = (
+            f"\n\n{reviewer_feedback}\n" if reviewer_feedback else ""
+        )
         user_message = (
-            f"CANDIDATE NAME: {name}\nJOB: {job_title} at {company}\n\n"
-            f"JOB DESCRIPTION:\n{job_description}\n{profile}{archetype_hint}{narrative_block}{url_instruction}\n"
-            f"PREVIOUS RESUME (Pass {pass_num - 1}, Score: {previous_score}/100):\n{prev_str}\n\n"
-            f"Revise to improve ATS score. Focus on gaps. Do NOT add or remove bullets -- only rephrase."
+            f"JOB: {job_title} at {company}\n\n"
+            f"JOB DESCRIPTION:\n{job_description}{archetype_hint}\n\n"
+            f"PREVIOUS RESUME (Pass {pass_num - 1}, Score: {previous_score}/100):\n{prev_str}"
+            f"{feedback_block}\n"
+            f"Apply the reviewer feedback verbatim where possible. Do NOT add or remove bullets — only rephrase."
         )
 
-    # Cache the system prompt — same across all jobs for this user
+    # Two cache breakpoints: system prompt (global) + candidate context (per-user).
+    # Both stay warm across passes and across all jobs for the same user.
     response = client.messages.create(
         model=GENERATION_MODEL,
         max_tokens=4096,
@@ -325,13 +400,319 @@ def generate_cv_and_cl(
                 "type": "text",
                 "text": AGENT_SYSTEM_PROMPT,
                 "cache_control": {"type": "ephemeral"},
-            }
+            },
+            {
+                "type": "text",
+                "text": candidate_context,
+                "cache_control": {"type": "ephemeral"},
+            },
         ],
         messages=[{"role": "user", "content": user_message}],
     )
 
     text = response.content[0].text if response.content[0].type == "text" else ""
     return _parse_agent_output(text, pass_num)
+
+
+# ---------------------------------------------------------------------------
+# Page-fit trim: shorten bullets when even tightest CSS can't squeeze to 1 page.
+# Uses Haiku — this is mechanical shortening, doesn't need Sonnet judgment.
+# ---------------------------------------------------------------------------
+def trim_resume_for_fit(resume: dict, overflow_words: int) -> dict:
+    """Return `resume` with bullet wording shortened by ~`overflow_words` total.
+
+    Structural invariants: same sections, same job count, same bullet count
+    per job. Only wording changes. Falls back to original on parse failure.
+    """
+    resume_json = json.dumps(resume, indent=2)
+
+    system = (
+        "You shorten resumes to fit one page. Output a JSON object only — "
+        "no markdown fences, no commentary."
+    )
+    user = (
+        f"This resume overflows page 1 of the rendered PDF. Shorten its bullet "
+        f"wording to cut roughly {overflow_words} words across the whole resume.\n\n"
+        f"HARD RULES:\n"
+        f"- Return the EXACT same JSON structure (same keys, same nesting).\n"
+        f"- Keep the SAME number of experience entries, education entries, projects, skills.\n"
+        f"- Keep the SAME number of bullets in every job — do NOT delete bullets.\n"
+        f"- Only shorten wording. Cut filler, redundancy, weak qualifiers.\n"
+        f"- Preserve specific metrics, numbers, tool/tech names, project names, company names.\n"
+        f"- Prefer cutting from the LONGEST bullets first.\n\n"
+        f"RESUME JSON:\n{resume_json}\n\n"
+        f"Output the shortened JSON object now:"
+    )
+
+    response = client.messages.create(
+        model=SCREENING_MODEL,
+        max_tokens=4096,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+
+    text = response.content[0].text if response.content[0].type == "text" else ""
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.warning("trim_resume_for_fit: JSON parse failed (%s); returning original.", e)
+        return resume
+
+
+# ---------------------------------------------------------------------------
+# User-driven tweaks: plain-English edits to an already-generated CV or CL.
+# Uses Haiku (mechanical edits, doesn't need Sonnet judgment).
+# ---------------------------------------------------------------------------
+_TWEAK_CV_SYSTEM = (
+    "You apply targeted edits to a tailored resume JSON based on a user's "
+    "plain-English instruction.\n\n"
+    "RULES:\n"
+    "- Output ONLY the modified JSON object. No markdown fences, no commentary.\n"
+    "- Preserve the EXACT same top-level keys and overall JSON shape.\n"
+    "- Honor structural edits the user explicitly requests (add/remove bullets, "
+    "reorder, drop sections, etc.). The user's request is the source of truth "
+    "for what they want.\n"
+    "- NEVER invent experience, employers, projects, metrics, certifications, "
+    "or skills not present in the BASE CV. If the user asks for something the "
+    "base CV does not support, ignore that part of the request.\n"
+    "- Keep the writing style consistent with the rest of the resume: action "
+    "verbs, specific metrics, no filler words, no em dashes/semicolons/"
+    "exclamation marks."
+)
+
+_TWEAK_CL_SYSTEM = (
+    "You apply targeted edits to a cover letter based on a user's plain-English "
+    "instruction.\n\n"
+    "RULES:\n"
+    "- Output ONLY the modified cover letter text. No commentary, no preamble, "
+    "no markdown fences.\n"
+    "- Honor what the user asks for: rewriting paragraphs, shortening, "
+    "changing tone, etc.\n"
+    "- NEVER invent experience, employers, projects, or metrics not present "
+    "in the BASE CV.\n"
+    "- Preserve any URLs already in the sign-off unless the user asks to "
+    "change them.\n"
+    "- No em dashes, semicolons, or exclamation marks."
+)
+
+
+def _strip_json_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return text
+
+
+def apply_cv_tweak(current_cv: dict, base_cv: dict, user_prompt: str) -> dict:
+    """Return `current_cv` modified per `user_prompt`. Falls back to the
+    original on JSON parse failure so the UI never crashes on a bad model
+    response."""
+    base_cv_json = json.dumps(base_cv, indent=2)
+    current_cv_json = json.dumps(current_cv, indent=2)
+
+    user_message = (
+        f"USER INSTRUCTION:\n{user_prompt}\n\n"
+        f"CURRENT TAILORED RESUME (this is what to edit):\n{current_cv_json}\n\n"
+        f"Output the edited JSON object now."
+    )
+
+    response = client.messages.create(
+        model=SCREENING_MODEL,
+        max_tokens=4096,
+        system=[
+            {
+                "type": "text",
+                "text": _TWEAK_CV_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": f"BASE CV (source of truth — never invent beyond this):\n{base_cv_json}",
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    text = response.content[0].text if response.content[0].type == "text" else ""
+    text = _strip_json_fences(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        logger.warning("apply_cv_tweak: JSON parse failed (%s); returning original.", e)
+        return current_cv
+
+
+def apply_cl_tweak(current_cl: str, base_cv: dict, user_prompt: str) -> str:
+    """Return `current_cl` modified per `user_prompt`."""
+    base_cv_json = json.dumps(base_cv, indent=2)
+
+    user_message = (
+        f"USER INSTRUCTION:\n{user_prompt}\n\n"
+        f"CURRENT COVER LETTER (this is what to edit):\n{current_cl}\n\n"
+        f"Output the edited cover letter text now."
+    )
+
+    response = client.messages.create(
+        model=SCREENING_MODEL,
+        max_tokens=2048,
+        system=[
+            {
+                "type": "text",
+                "text": _TWEAK_CL_SYSTEM,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": f"BASE CV (source of truth — never invent beyond this):\n{base_cv_json}",
+                "cache_control": {"type": "ephemeral"},
+            },
+        ],
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    text = response.content[0].text if response.content[0].type == "text" else ""
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Multi-agent orchestration: generate → score → critique → polish → re-score
+# ---------------------------------------------------------------------------
+def tailor_cv_iterative(
+    base_cv: dict,
+    job_description: str,
+    job_title: str,
+    company: str,
+    profile_context: Optional[str] = None,
+    candidate_name: Optional[str] = None,
+    linkedin_url: Optional[str] = None,
+    github_url: Optional[str] = None,
+    archetype: Optional[str] = None,
+    narrative: Optional[str] = None,
+    candidate_years: Optional[int] = None,
+    max_passes: int = 3,
+    target_score: int = 80,
+    on_pass: Optional[callable] = None,
+) -> GenerationResult:
+    """Generate a tailored CV, score it with an independent ATS scorer,
+    then iteratively review-and-polish until the target score is reached or
+    we stop improving.
+
+    `on_pass` (optional) is a callback invoked after each pass with
+    (pass_num: int, score: ats_scorer.AtsScore) so callers can update UI
+    state without coupling.
+    """
+    # Lazy import to avoid circular reference at module load time
+    from . import ats_scorer  # noqa: WPS433
+
+    # Phase 1: analyze JD once
+    jd_analysis = ats_scorer.analyze_jd(job_description)
+    logger.info(
+        "JD analysis: %d must-have, %d nice-to-have, role=%s",
+        len(jd_analysis.must_have_keywords),
+        len(jd_analysis.nice_to_have_keywords),
+        jd_analysis.role_summary[:80],
+    )
+
+    # Phase 2: initial generation
+    result = generate_cv_and_cl(
+        base_cv=base_cv,
+        job_description=job_description,
+        job_title=job_title,
+        company=company,
+        pass_num=1,
+        profile_context=profile_context,
+        candidate_name=candidate_name,
+        linkedin_url=linkedin_url,
+        github_url=github_url,
+        archetype=archetype,
+        narrative=narrative,
+    )
+
+    # Phase 3: score v1
+    score = ats_scorer.score_resume(result.resume, jd_analysis, job_description, candidate_years)
+    logger.info("Pass 1 score: %d/100 (decision=%s)", score.total, score.decision)
+    if on_pass:
+        try:
+            on_pass(1, score)
+        except Exception:
+            pass
+
+    best_result, best_score = result, score
+
+    # Phase 4: iterate
+    for pass_num in range(2, max_passes + 1):
+        if best_score.total >= target_score:
+            break
+
+        feedback = ats_scorer.critique(best_result.resume, jd_analysis, job_description, best_score)
+        if feedback.is_empty():
+            logger.info("Reviewer produced no feedback; stopping iteration.")
+            break
+
+        polished = generate_cv_and_cl(
+            base_cv=base_cv,
+            job_description=job_description,
+            job_title=job_title,
+            company=company,
+            pass_num=pass_num,
+            previous_resume=best_result.resume,
+            previous_score=best_score.total,
+            profile_context=profile_context,
+            candidate_name=candidate_name,
+            linkedin_url=linkedin_url,
+            github_url=github_url,
+            archetype=archetype,
+            narrative=narrative,
+            reviewer_feedback=feedback.to_prompt(),
+        )
+
+        polished_score = ats_scorer.score_resume(
+            polished.resume, jd_analysis, job_description, candidate_years
+        )
+        logger.info(
+            "Pass %d score: %d/100 (delta=%+d, decision=%s)",
+            pass_num,
+            polished_score.total,
+            polished_score.total - best_score.total,
+            polished_score.decision,
+        )
+        if on_pass:
+            try:
+                on_pass(pass_num, polished_score)
+            except Exception:
+                pass
+
+        # Only accept polish if it actually improved the score
+        if polished_score.total > best_score.total:
+            best_result, best_score = polished, polished_score
+        else:
+            logger.info(
+                "Pass %d did not improve (%d <= %d); keeping previous.",
+                pass_num,
+                polished_score.total,
+                best_score.total,
+            )
+            break
+
+    # Marshal score back into GenerationResult shape
+    best_result.ats_score = best_score.total
+    best_result.ats_breakdown = AtsBreakdown(
+        keyword=best_score.keyword,
+        experience=best_score.requirements,
+        skills=best_score.semantic,
+        format=best_score.format,
+        impact=best_score.impact,
+        decision=best_score.decision,
+        gaps=best_score.gaps,
+    )
+    best_result.pass_num = best_score and best_result.pass_num
+    return best_result
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +876,24 @@ def screen_jobs(
             if response.content[0].type == "text"
             else "[]"
         )
-        batch_results = json.loads(_strip_fences(raw))
+        stripped = _strip_fences(raw)
+        try:
+            batch_results = json.loads(stripped)
+        except json.JSONDecodeError:
+            # Claude sometimes returns multiple JSON objects instead of an array
+            # Try wrapping in array brackets or parsing line by line
+            try:
+                batch_results = json.loads(f"[{stripped}]")
+            except json.JSONDecodeError:
+                # Parse individual JSON objects separated by newlines
+                batch_results = []
+                for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', stripped):
+                    try:
+                        batch_results.append(json.loads(match.group()))
+                    except json.JSONDecodeError:
+                        continue
+        if isinstance(batch_results, dict):
+            batch_results = [batch_results]
         results.extend(batch_results)
 
     return results

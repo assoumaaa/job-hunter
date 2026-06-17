@@ -31,7 +31,6 @@ CV_SCHEMA = """{
     "portfolio": "string or null (full URL)"
   },
   "summary": "string (professional summary paragraph, or empty string if none)",
-  "competencies": ["string (keyword phrases)"],
   "experience": [
     {
       "company": "string",
@@ -87,7 +86,6 @@ RULES:
 - For experience, list jobs in the order they appear (usually reverse chronological).
 - For skills, group into logical categories (Languages, Frameworks, Tools, Cloud, etc.).
 - If the CV has a professional summary at the top, extract it. Otherwise leave summary as empty string.
-- Competencies should be key skill phrases — extract from a "Core Competencies" section if present, otherwise leave as empty array.
 - LinkedIn/GitHub/portfolio URLs: extract the full URL if present.
 
 OUTPUT: Return ONLY valid JSON matching this schema (no markdown fences, no explanation):

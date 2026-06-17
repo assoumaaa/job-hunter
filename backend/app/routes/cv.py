@@ -9,8 +9,8 @@ from ..core.auth import get_current_user
 from ..core.db import get_db
 from ..models.cv import CV
 from ..models.user import User
-from ..schemas.cv import CVCompileRequest, CVOut, CVParseTextRequest, CVUpdateRequest
-from ..services import cv_parser, pdf_generator
+from ..schemas.cv import CLCompileRequest, CVCompileRequest, CVOut, CVParseTextRequest, CVUpdateRequest
+from ..services import claude, cv_parser, pdf_generator
 
 router = APIRouter(prefix="/cv", tags=["cv"])
 
@@ -75,22 +75,64 @@ def parse_cv_text(
     return {"structuredData": parsed}
 
 
-@router.post("/compile")
-def compile_cv(
+@router.post("/estimate")
+def estimate_cv(
     body: CVCompileRequest,
     current_user: User = Depends(get_current_user),
 ):
-    """Render structured CV data to PDF via Playwright."""
+    """Estimate page count for a CV without rendering."""
+    return pdf_generator.estimate_cv_pages(body.structuredData)
+
+
+@router.post("/compile")
+def compile_cv(
+    body: CVCompileRequest,
+    trim: bool = True,
+    current_user: User = Depends(get_current_user),
+):
+    """Render structured CV data to PDF via WeasyPrint.
+
+    `trim=true` (default) lets Haiku shorten bullets if CSS auto-fit can't squeeze
+    the CV to one page. Disable with `?trim=false` for fast preview renders
+    (e.g. the tweak page) where extra latency hurts UX and content distortion
+    would confuse the user.
+    """
     try:
         pdf_bytes = pdf_generator.generate_pdf(
             body.structuredData,
             lang=body.lang,
             page_format=body.pageFormat,
+            trim_callback=claude.trim_resume_for_fit if trim else None,
         )
+        name = body.structuredData.get("header", {}).get("name", "CV")
+        filename = name.replace(" ", "_") + "_CV.pdf"
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": "inline; filename=cv.pdf"},
+            headers={"Content-Disposition": f"inline; filename={filename}"},
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/compile-cl")
+def compile_cover_letter(
+    body: CLCompileRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """Render cover letter text to PDF."""
+    try:
+        pdf_bytes = pdf_generator.generate_cover_letter_pdf(
+            body.text,
+            contact=body.contact,
+            page_format=body.pageFormat,
+        )
+        name = (body.contact or {}).get("name", "Cover_Letter")
+        filename = name.replace(" ", "_") + "_CL.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename={filename}"},
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
