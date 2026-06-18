@@ -60,6 +60,7 @@
 	0% { background-position: -200% 0; }
 	100% { background-position: 200% 0; }
 }
+
 .animate-shimmer {
 	background: linear-gradient(90deg, #f4f4f5 0%, #fafafa 50%, #f4f4f5 100%);
 	background-size: 200% 100%;

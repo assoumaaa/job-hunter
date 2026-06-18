@@ -13,7 +13,9 @@ export default function ConfirmModal({ message, onConfirm, onCancel }) {
 			width={380}
 			footer={
 				<>
-					<Button variant="subtle" size="sm" onClick={onCancel}>Cancel</Button>
+					<Button variant="subtle" size="sm" onClick={onCancel}>
+						Cancel
+					</Button>
 					<Button variant="destructive" size="sm" onClick={onConfirm}>
 						<Trash2 className="h-3.5 w-3.5" />
 						Delete

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useCallApi } from "services";
 
 import { Button } from "components/ui/button";
-import { Input } from "components/ui/input";
+import { Input, Textarea } from "components/ui/input";
 import { Modal } from "components/ui/modal";
 
 const SOURCE_OPTIONS = [
@@ -191,12 +191,12 @@ export default function AddJobDialog({ onClose, onAdded }) {
 				</Field>
 
 				<Field label="Job description" required>
-					<textarea
+					<Textarea
 						value={form.description}
 						onChange={set("description")}
 						placeholder="Paste the full job description here…"
 						rows={6}
-						className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-[13px] text-zinc-900 placeholder:text-zinc-400 leading-relaxed resize-y hover:border-zinc-300 focus-visible:outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/5"
+						className="leading-relaxed resize-y"
 					/>
 				</Field>
 

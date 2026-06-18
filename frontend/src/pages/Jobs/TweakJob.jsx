@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useSnackbar } from "notistack";
 
 import { Button } from "components/ui/button";
+import { Textarea } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { useCallApi } from "services";
 
@@ -13,17 +14,17 @@ const SUGGESTIONS = {
 		"Make the bullets more punchy and metric-driven",
 		"Reorder skills so Python comes first",
 	],
-	cl: [
-		"Make it shorter — under 200 words",
-		"Open with a stronger hook",
-		"Make the tone more confident",
-	],
+	cl: ["Make it shorter — under 200 words", "Open with a stronger hook", "Make the tone more confident"],
 };
 
 function parseCv(value) {
 	if (!value) return null;
 	if (typeof value === "object") return value;
-	try { return JSON.parse(value); } catch { return null; }
+	try {
+		return JSON.parse(value);
+	} catch {
+		return null;
+	}
 }
 
 export default function TweakJob() {
@@ -34,8 +35,8 @@ export default function TweakJob() {
 
 	const [job, setJob] = useState(null);
 	const [contact, setContact] = useState(null);
-	const [cv, setCv] = useState(null);          // parsed CV JSON
-	const [cl, setCl] = useState("");            // CL text
+	const [cv, setCv] = useState(null); // parsed CV JSON
+	const [cl, setCl] = useState(""); // CL text
 	const [hasOriginal, setHasOriginal] = useState(false);
 	const [activeTab, setActiveTab] = useState("cv");
 	const [prompt, setPrompt] = useState("");
@@ -62,12 +63,13 @@ export default function TweakJob() {
 			error: "Failed to load job",
 		});
 		callApi("/profile", {
-			onSuccess: (d) => setContact({
-				name: d.fullName ?? "",
-				location: d.currentLocation ?? "",
-				linkedinUrl: d.linkedinUrl ?? "",
-				githubUrl: d.githubUrl ?? "",
-			}),
+			onSuccess: (d) =>
+				setContact({
+					name: d.fullName ?? "",
+					location: d.currentLocation ?? "",
+					linkedinUrl: d.linkedinUrl ?? "",
+					githubUrl: d.githubUrl ?? "",
+				}),
 			suppressError: true,
 		});
 	}, [jobId]);
@@ -112,9 +114,12 @@ export default function TweakJob() {
 	}, [renderPreview]);
 
 	// Cleanup blob on unmount
-	useEffect(() => () => {
-		if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
-	}, []);
+	useEffect(
+		() => () => {
+			if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
+		},
+		[],
+	);
 
 	const handleTweak = () => {
 		const trimmed = prompt.trim();
@@ -209,8 +214,8 @@ export default function TweakJob() {
 			{/* Tab switcher */}
 			<div className="flex items-center gap-1 px-6 py-2 border-b border-zinc-100 bg-zinc-50/40">
 				{[
-					{ key: "cv", label: "CV",            hasContent: Boolean(cv) },
-					{ key: "cl", label: "Cover Letter",  hasContent: Boolean(cl) },
+					{ key: "cv", label: "CV", hasContent: Boolean(cv) },
+					{ key: "cl", label: "Cover Letter", hasContent: Boolean(cl) },
 				].map((t) => (
 					<button
 						key={t.key}
@@ -243,14 +248,19 @@ export default function TweakJob() {
 					{previewLoading && (
 						<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
 							<span className="inline-flex items-center gap-2 text-xs text-zinc-600 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm ring-1 ring-zinc-200">
-								<span className="h-1.5 w-1.5 rounded-full bg-indigo-500" style={{ animation: "pulse 1.2s ease-in-out infinite" }} />
+								<span
+									className="h-1.5 w-1.5 rounded-full bg-indigo-500"
+									style={{ animation: "pulse 1.2s ease-in-out infinite" }}
+								/>
 								Rendering…
 							</span>
 						</div>
 					)}
 					{!previewUrl && !previewLoading && (
 						<div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
-							{activeTab === "cv" ? "No CV generated for this job yet" : "No cover letter generated for this job yet"}
+							{activeTab === "cv"
+								? "No CV generated for this job yet"
+								: "No cover letter generated for this job yet"}
 						</div>
 					)}
 				</div>
@@ -258,7 +268,7 @@ export default function TweakJob() {
 				<div className="border-t border-zinc-200 bg-white p-3 shrink-0">
 					<div className="flex items-start gap-2">
 						<div className="flex-1">
-							<textarea
+							<Textarea
 								value={prompt}
 								onChange={(e) => setPrompt(e.target.value)}
 								onKeyDown={onPromptKeyDown}
@@ -269,7 +279,7 @@ export default function TweakJob() {
 										: "Tell me what to change. E.g. 'make it shorter' or 'open with a stronger hook'"
 								}
 								rows={2}
-								className="w-full resize-none rounded-md border border-zinc-200 px-3 py-2 text-[13px] text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 disabled:opacity-60"
+								className="rounded-md resize-none disabled:opacity-60"
 							/>
 							<div className="flex flex-wrap items-center gap-1.5 mt-1.5">
 								<span className="text-[10.5px] text-zinc-400 font-medium">Try:</span>

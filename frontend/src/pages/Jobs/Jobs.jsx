@@ -1,6 +1,6 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
-import { Bolt as BoltIcon, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
-import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_OPTIONS } from "./StatusChip";
+import { Bolt as BoltIcon, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
+import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_META, RELEVANCE_OPTIONS } from "./StatusChip";
 import { useCallApi, useLoading } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -13,14 +13,16 @@ import ConfirmModal from "./ConfirmModal";
 import DocChip from "./DocChip";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
+import { PortalMenu } from "components/ui/portal-menu";
+import { Select } from "components/ui/select";
 import { useSnackbar } from "notistack";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 const gridTheme = themeQuartz.withParams({
-	fontSize: 13,
-	rowHeight: 56,
-	headerHeight: 38,
+	fontSize: 14,
+	rowHeight: 68,
+	headerHeight: 42,
 	fontFamily: "Inter, sans-serif",
 	selectedRowBackgroundColor: "#fafafa",
 	columnBorder: false,
@@ -29,19 +31,129 @@ const gridTheme = themeQuartz.withParams({
 	headerBackgroundColor: "#fafafa",
 	headerTextColor: "#71717a",
 	headerFontWeight: 500,
-	headerFontSize: 11,
-	cellHorizontalPadding: 14,
+	headerFontSize: 12,
+	cellHorizontalPadding: 18,
 });
 
-const selectCls =
-	"h-9 rounded-md border border-zinc-200 bg-white px-2.5 text-[13px] font-medium text-zinc-700 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5 cursor-pointer disabled:opacity-40 hover:border-zinc-300 transition-colors";
+const FETCH_RANGES = [
+	{ value: "24h", label: "Last 24h" },
+	{ value: "week", label: "Last week" },
+	{ value: "month", label: "Last month" },
+];
+
+const PULSE_STYLE = { animation: "pulse 1.2s ease-in-out infinite" };
+
+function SourceIcon({ source, className = "" }) {
+	if (source === "linkedin") {
+		return (
+			<svg viewBox="0 0 24 24" fill="#0A66C2" className={className}>
+				<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+			</svg>
+		);
+	}
+	return (
+		<span
+			className={`rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 ${className}`}
+		>
+			M
+		</span>
+	);
+}
+
+function FetchDropdown({ loading, onFetch }) {
+	const [open, setOpen] = useState(false);
+	const triggerRef = useRef(null);
+
+	return (
+		<>
+			<Button ref={triggerRef} variant="outline" size="sm" onClick={() => setOpen((o) => !o)} disabled={loading}>
+				{loading ? (
+					<RefreshCw className="h-3.5 w-3.5 animate-spin" />
+				) : (
+					<SourceIcon source="linkedin" className="h-3.5 w-3.5" />
+				)}
+				{loading ? "Fetching…" : "Fetch"}
+			</Button>
+			<PortalMenu
+				open={open}
+				onClose={() => setOpen(false)}
+				triggerRef={triggerRef}
+				align="right"
+				className="min-w-[160px]"
+			>
+				<div className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+					Fetch jobs from
+				</div>
+				{FETCH_RANGES.map((r) => (
+					<button
+						key={r.value}
+						type="button"
+						onClick={() => {
+							setOpen(false);
+							onFetch(r.value);
+						}}
+						className="w-full text-left px-2.5 h-8 text-[13px] text-zinc-700 hover:bg-zinc-50 cursor-pointer truncate"
+					>
+						{r.label}
+					</button>
+				))}
+			</PortalMenu>
+		</>
+	);
+}
+
+function formatAppliedDate(value) {
+	if (!value) return "";
+	const d = new Date(value);
+	if (isNaN(d.getTime())) return "";
+	const dd = String(d.getDate()).padStart(2, "0");
+	const mm = String(d.getMonth() + 1).padStart(2, "0");
+	const yy = String(d.getFullYear()).slice(-2);
+	return `${dd} / ${mm} / ${yy}`;
+}
+
+function AppliedDateCell({ value, onChange }) {
+	const [editing, setEditing] = useState(false);
+	const inputRef = useRef(null);
+
+	useEffect(() => {
+		if (editing && inputRef.current) {
+			inputRef.current.focus();
+		}
+	}, [editing]);
+
+	if (editing) {
+		return (
+			<input
+				ref={inputRef}
+				type="date"
+				className="text-[13px] border-none bg-transparent cursor-pointer w-full text-zinc-600"
+				value={value ? new Date(value).toISOString().slice(0, 10) : ""}
+				onChange={(e) => {
+					onChange(e.target.value ? new Date(e.target.value).toISOString() : null);
+				}}
+				onBlur={() => setEditing(false)}
+			/>
+		);
+	}
+
+	const display = formatAppliedDate(value);
+	return (
+		<button
+			type="button"
+			onClick={() => setEditing(true)}
+			className="w-full h-full text-left text-[13px] text-zinc-600 cursor-pointer hover:text-zinc-900 transition-colors"
+		>
+			{display || <span className="text-zinc-300">—</span>}
+		</button>
+	);
+}
 
 export default function Jobs() {
 	const [jobs, setJobs] = useState([]);
 	const [contact, setContact] = useState(null);
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
-	const [datePosted, setDatePosted] = useState("week");
 	const [filterCompany, setFilterCompany] = useState("");
 	const [filterTitle, setFilterTitle] = useState("");
 	const [viewFilter, setViewFilter] = useState("to_apply");
@@ -68,6 +180,7 @@ export default function Jobs() {
 				)
 					return false;
 				if (viewFilter === "applied" && j.applicationStatus !== "applied") return false;
+				if (viewFilter === "interview" && j.applicationStatus !== "interview") return false;
 				if (viewFilter === "rejected" && j.applicationStatus !== "rejected") return false;
 				if (viewFilter === "no_fit" && j.relevanceStatus !== "irrelevant") return false;
 				if (filterCompany && !j.company.toLowerCase().includes(filterCompany.toLowerCase())) return false;
@@ -99,8 +212,31 @@ export default function Jobs() {
 		[callApi],
 	);
 
-	const colDefs = useMemo(
-		() => [
+	// Optimistic "screen these ids" flow shared by the toolbar Screen button and
+	// the auto-screen-on-add path. prefix/variant/error differ per caller.
+	const screenJobs = useCallback(
+		(ids, { variant = "success", prefix = () => "", error = "Failed to screen jobs" } = {}) => {
+			if (!ids.length) return;
+			setScreeningIds(new Set(ids));
+			return callApi("/jobs/screen", {
+				method: "POST",
+				json: { ids },
+				alias: "screenJobs",
+				error,
+				onSuccess: (data) => {
+					enqueueSnackbar(
+						`${prefix(data)}${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
+						{ variant },
+					);
+					fetchJobs();
+				},
+			}).finally(() => setScreeningIds(new Set()));
+		},
+		[callApi, enqueueSnackbar, fetchJobs],
+	);
+
+	const colDefs = useMemo(() => {
+		const cols = [
 			{
 				field: "relevanceStatus",
 				headerName: "Fit",
@@ -108,10 +244,7 @@ export default function Jobs() {
 				cellRenderer: ({ value, data }) =>
 					screeningIds.has(data.id) ? (
 						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-medium">
-							<span
-								className="h-1.5 w-1.5 rounded-full bg-zinc-400"
-								style={{ animation: "pulse 1.2s ease-in-out infinite" }}
-							/>
+							<span className="h-1.5 w-1.5 rounded-full bg-zinc-400" style={PULSE_STYLE} />
 							Screening
 						</span>
 					) : (
@@ -131,16 +264,8 @@ export default function Jobs() {
 				cellStyle: { display: "flex", alignItems: "center" },
 				cellRenderer: ({ data }) => (
 					<div className="flex flex-col justify-center gap-0.5 h-full overflow-hidden min-w-0">
-						<div className="flex items-center gap-1.5 text-[11px] text-zinc-500 font-medium leading-tight">
-							{data.source === "linkedin" ? (
-								<svg viewBox="0 0 24 24" className="w-3 h-3 shrink-0" fill="#0A66C2">
-									<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-								</svg>
-							) : (
-								<span className="w-3 h-3 rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 shrink-0">
-									M
-								</span>
-							)}
+						<div className="flex items-center gap-1.5 text-[12px] text-zinc-500 font-medium leading-tight">
+							<SourceIcon source={data.source} className="w-3 h-3 shrink-0" />
 							<span className="truncate">{data.company}</span>
 							{data.location && <span className="text-zinc-300">· {data.location.split(",")[0]}</span>}
 						</div>
@@ -149,12 +274,12 @@ export default function Jobs() {
 								href={data.url}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="text-[13px] font-semibold text-zinc-900 hover:text-indigo-600 truncate leading-snug transition-colors"
+								className="text-[14px] font-semibold text-zinc-900 hover:text-indigo-600 truncate leading-snug transition-colors"
 							>
 								{data.title}
 							</a>
 						) : (
-							<span className="text-[13px] font-semibold text-zinc-900 truncate leading-snug">
+							<span className="text-[14px] font-semibold text-zinc-900 truncate leading-snug">
 								{data.title}
 							</span>
 						)}
@@ -211,33 +336,45 @@ export default function Jobs() {
 					);
 				},
 			},
-			{
+		];
+
+		if (viewFilter !== "to_apply") {
+			cols.push({
 				field: "applicationDate",
 				headerName: "Applied",
 				width: 110,
 				sortable: true,
 				cellRenderer: ({ value, data }) => (
-					<input
-						type="date"
-						className="text-[12px] border-none bg-transparent cursor-pointer w-full"
-						style={{ color: value ? "#71717a" : "transparent" }}
-						value={value ? new Date(value).toISOString().slice(0, 10) : ""}
-						onChange={(e) =>
-							patchJob(data.id, {
-								applicationDate: e.target.value ? new Date(e.target.value).toISOString() : null,
-							})
-						}
-					/>
+					<AppliedDateCell value={value} onChange={(iso) => patchJob(data.id, { applicationDate: iso })} />
 				),
-			},
-		],
-		[patchJob, screeningIds, contact],
-	);
+			});
+		}
 
-	const handleFetch = () => {
+		cols.push({
+			headerName: "",
+			width: 56,
+			sortable: false,
+			cellRenderer: ({ data }) => {
+				if (!data.generatedCv && !data.generatedCl) return null;
+				return (
+					<button
+						onClick={() => navigate(`/jobs/${data.id}/tweak`)}
+						title="Tweak CV & cover letter"
+						className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer"
+					>
+						<Pencil className="h-3.5 w-3.5" />
+					</button>
+				);
+			},
+		});
+
+		return cols;
+	}, [patchJob, screeningIds, contact, viewFilter, navigate]);
+
+	const handleFetch = (range) => {
 		callApi("/jobs/fetch", {
 			method: "POST",
-			json: { datePosted },
+			json: { datePosted: range },
 			alias: "fetchJobs",
 			error: "Failed to fetch jobs",
 			onSuccess: (fetchData) => {
@@ -262,25 +399,7 @@ export default function Jobs() {
 			selectedIds.length > 0
 				? jobs.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened").map((j) => j.id)
 				: jobs.filter((j) => j.relevanceStatus === "unscreened").map((j) => j.id);
-		if (!toScreen.length) return;
-
-		setScreeningIds(new Set(toScreen));
-
-		callApi("/jobs/screen", {
-			method: "POST",
-			json: { ids: toScreen },
-			alias: "screenJobs",
-			error: "Failed to screen jobs",
-			onSuccess: (data) => {
-				enqueueSnackbar(
-					`${data.screened ?? 0} screened — ${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
-					{ variant: "success" },
-				);
-				fetchJobs();
-			},
-		}).finally(() => {
-			setScreeningIds(new Set());
-		});
+		screenJobs(toScreen, { prefix: (d) => `${d.screened ?? 0} screened — ` });
 	};
 
 	const handleDelete = () => {
@@ -364,20 +483,11 @@ export default function Jobs() {
 						setJobs((prev) => [job, ...prev]);
 						enqueueSnackbar(`Added ${job.title} at ${job.company}`, { variant: "success" });
 						if (job.description) {
-							setScreeningIds(new Set([job.id]));
-							callApi("/jobs/screen", {
-								method: "POST",
-								json: { ids: [job.id] },
-								alias: "screenJobs",
+							screenJobs([job.id], {
+								variant: "info",
+								prefix: () => "Screening: ",
 								error: "Failed to screen job",
-								onSuccess: (data) => {
-									enqueueSnackbar(
-										`Screening: ${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
-										{ variant: "info" },
-									);
-									fetchJobs();
-								},
-							}).finally(() => setScreeningIds(new Set()));
+							});
 						}
 					}}
 				/>
@@ -395,6 +505,8 @@ export default function Jobs() {
 				badge={filteredJobs.length}
 				actions={
 					<>
+						<FetchDropdown loading={loading?.fetchJobs} onFetch={handleFetch} />
+						<div className="w-px h-5 bg-zinc-200 mx-1" />
 						<Button variant="outline" size="sm" onClick={() => setShowAddJob(true)}>
 							<Plus className="h-3.5 w-3.5" />
 							Add job
@@ -449,13 +561,18 @@ export default function Jobs() {
 						className="w-44 pl-7"
 					/>
 				</div>
-				<select className={selectCls} value={viewFilter} onChange={(e) => setViewFilter(e.target.value)}>
-					<option value="to_apply">To apply</option>
-					<option value="applied">Applied</option>
-					<option value="rejected">Rejected</option>
-					<option value="no_fit">No fit</option>
-					<option value="all">All jobs</option>
-				</select>
+				<Select
+					value={viewFilter}
+					onChange={setViewFilter}
+					options={[
+						{ value: "to_apply", label: "To apply" },
+						{ value: "applied", label: "Applied" },
+						{ value: "interview", label: "Interview" },
+						{ value: "rejected", label: "Rejected" },
+						{ value: "no_fit", label: "No fit" },
+						{ value: "all", label: "All jobs" },
+					]}
+				/>
 				{(filterCompany || filterTitle || viewFilter !== "to_apply") && (
 					<Button
 						variant="ghost"
@@ -469,33 +586,6 @@ export default function Jobs() {
 					>
 						Reset
 					</Button>
-				)}
-
-				<div className="w-px h-5 bg-zinc-200 mx-1" />
-
-				{!selectedIds.length && (
-					<>
-						<select
-							className={selectCls}
-							value={datePosted}
-							onChange={(e) => setDatePosted(e.target.value)}
-							disabled={loading?.fetchJobs}
-						>
-							<option value="24h">Last 24h</option>
-							<option value="week">Last week</option>
-							<option value="month">Last month</option>
-						</select>
-						<Button variant="outline" size="sm" onClick={handleFetch} disabled={loading?.fetchJobs}>
-							{loading?.fetchJobs ? (
-								<RefreshCw className="h-3.5 w-3.5 animate-spin" />
-							) : (
-								<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="#0A66C2">
-									<path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-								</svg>
-							)}
-							{loading?.fetchJobs ? "Fetching…" : "Fetch"}
-						</Button>
-					</>
 				)}
 
 				{screenable > 0 && (
@@ -519,18 +609,11 @@ export default function Jobs() {
 					theme={gridTheme}
 					rowData={filteredJobs}
 					columnDefs={colDefs}
+					suppressCellFocus
 					getRowId={(params) => params.data.id}
-					getRowStyle={({ data }) => {
-						const border = {
-							good_fit: "#10b981",
-							maybe: "#f59e0b",
-							irrelevant: "#ef4444",
-							unscreened: "#e4e4e7",
-						};
-						return {
-							borderLeft: `2px solid ${border[data?.relevanceStatus] ?? "#e4e4e7"}`,
-						};
-					}}
+					getRowStyle={({ data }) => ({
+						borderLeft: `2px solid ${(RELEVANCE_META[data?.relevanceStatus] ?? RELEVANCE_META.unscreened).hex}`,
+					})}
 					rowSelection={{
 						mode: "multiRow",
 						checkboxes: true,
@@ -538,12 +621,6 @@ export default function Jobs() {
 						enableClickSelection: false,
 					}}
 					onSelectionChanged={(e) => setSelectedIds(e.api.getSelectedRows().map((r) => r.id))}
-					onRowClicked={(e) => {
-						const t = e.event?.target;
-						if (t && t.closest('a, button, select, input, [role="button"]')) return;
-						if (!e.data?.generatedCv) return;
-						navigate(`/jobs/${e.data.id}/tweak`);
-					}}
 					defaultColDef={{ resizable: true }}
 					initialState={{ sort: { sortModel: [{ colId: "fetchedAt", sort: "desc" }] } }}
 				/>

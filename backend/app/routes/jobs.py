@@ -2,18 +2,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..core.auth import get_current_user
 from ..core.db import get_db
-from ..models.job import Job
-from ..models.cv import CV
-from ..models.profile import Profile
-from ..models.position import Position
-from ..models.user import User
+from ..models import CV, Job, Position, Profile, User
 from ..schemas.job import (
     ExtractedJobResponse,
     ExtractUrlRequest,
@@ -32,6 +27,19 @@ from ..schemas.job import (
 from ..services import claude, apify, job_extractor
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _get_job_or_404(db: Session, job_id: str, current_user: User) -> Job:
+    job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _profile_list(profile, attr, default=None):
+    """Decode a JSON-list column off the profile, guarding None/empty."""
+    raw = getattr(profile, attr, None) if profile else None
+    return json.loads(raw) if raw else (default or [])
 
 
 @router.get("", response_model=list[JobOut])
@@ -61,9 +69,7 @@ def update_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    job = db.query(Job).filter(Job.id == body.id, Job.userId == current_user.id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, body.id, current_user)
 
     update_data = body.model_dump(exclude={"id"}, exclude_none=True)
     for key, value in update_data.items():
@@ -125,12 +131,7 @@ def add_manual_job(
 ):
     # Deduplicate by URL if provided
     if body.url:
-        parsed = urlparse(body.url.split("?")[0].rstrip("/"))
-        norm = (
-            f"https://linkedin.com{parsed.path}"
-            if "linkedin.com" in parsed.netloc
-            else parsed.geturl()
-        )
+        norm = job_extractor.normalize_job_url(body.url)
         existing = (
             db.query(Job).filter(Job.userId == current_user.id, Job.url == norm).first()
         )
@@ -168,17 +169,13 @@ def generate_cv(
     if not body.jobIds:
         raise HTTPException(status_code=400, detail="No job IDs provided")
 
-    user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
-    if not user_cv or not user_cv.structuredData:
-        raise HTTPException(
-            status_code=400, detail="No CV found. Please upload your CV first."
-        )
-
-    base_cv_data = json.loads(user_cv.structuredData)
+    base_cv_data = _load_user_base_cv(
+        db, current_user, detail="No CV found. Please upload your CV first."
+    )
     profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
 
-    languages = json.loads(profile.languages) if profile and profile.languages else []
-    keywords = json.loads(profile.keywords) if profile and profile.keywords else []
+    languages = _profile_list(profile, "languages")
+    keywords = _profile_list(profile, "keywords")
 
     profile_context = ""
     if profile:
@@ -265,7 +262,6 @@ def generate_cv(
         job.generatedCv = json.dumps(assembled)
         job.generatedCl = result.cover_letter
         job.generatedAt = datetime.utcnow()
-        job.updatedAt = datetime.utcnow()
         db.commit()
         db.refresh(job)
         results.append(job)
@@ -298,16 +294,10 @@ def screen_jobs(
     if not positions:
         raise HTTPException(status_code=400, detail="No positions configured.")
 
-    keywords = json.loads(profile.keywords) if profile and profile.keywords else []
-    languages = json.loads(profile.languages) if profile and profile.languages else []
-    deal_breakers = (
-        json.loads(profile.dealBreakers) if profile and profile.dealBreakers else []
-    )
-    preferred_locations = (
-        json.loads(profile.preferredLocations)
-        if profile and profile.preferredLocations
-        else []
-    )
+    keywords = _profile_list(profile, "keywords")
+    languages = _profile_list(profile, "languages")
+    deal_breakers = _profile_list(profile, "dealBreakers")
+    preferred_locations = _profile_list(profile, "preferredLocations")
 
     # Send full CV — cached via Anthropic prompt caching (90% cheaper on batches 2+)
     user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
@@ -381,26 +371,13 @@ def fetch_jobs(
         )
 
     profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
-    country_codes = (
-        json.loads(profile.preferredLocations)
-        if profile and profile.preferredLocations
-        else []
-    )
-    job_types = (
-        json.loads(profile.jobTypes) if profile and profile.jobTypes else ["fulltime"]
-    )
+    country_codes = _profile_list(profile, "preferredLocations")
+    job_types = _profile_list(profile, "jobTypes", ["fulltime"])
     position_labels = [p.label for p in positions]
 
-    def _norm_url(url: str) -> str:
-        """Strip query params and normalize linkedin subdomains."""
-        u = (url or "").split("?")[0].rstrip("/")
-        parsed = urlparse(u)
-        if "linkedin.com" in parsed.netloc:
-            u = f"https://linkedin.com{parsed.path}"
-        return u
-
+    normalize = job_extractor.normalize_job_url
     existing_rows = db.query(Job.url).filter(Job.userId == current_user.id).all()
-    existing_urls = {_norm_url(r.url or "") for r in existing_rows}
+    existing_urls = {normalize(r.url or "") for r in existing_rows}
 
     fetched = apify.fetch_linkedin_jobs(
         position_labels,
@@ -408,9 +385,9 @@ def fetch_jobs(
         body.datePosted,
         job_types,
     )
-    new_jobs = [j for j in fetched if _norm_url(j.url or "") not in existing_urls]
+    new_jobs = [j for j in fetched if normalize(j.url or "") not in existing_urls]
     for j in new_jobs:
-        norm = _norm_url(j.url or "")
+        norm = normalize(j.url or "")
         existing_urls.add(norm)
         db.add(
             Job(
@@ -436,10 +413,14 @@ def fetch_jobs(
     )
 
 
-def _load_user_base_cv(db: Session, current_user: User) -> dict:
+def _load_user_base_cv(
+    db, current_user, *, required=True, detail="No base CV on file."
+):
     user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
     if not user_cv or not user_cv.structuredData:
-        raise HTTPException(status_code=400, detail="No base CV on file.")
+        if required:
+            raise HTTPException(status_code=400, detail=detail)
+        return None
     return json.loads(user_cv.structuredData)
 
 
@@ -461,9 +442,7 @@ def tweak_job_doc(
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is empty")
 
-    job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, current_user)
 
     base_cv = _load_user_base_cv(db, current_user)
 
@@ -486,7 +465,6 @@ def tweak_job_doc(
         updated_text = claude.apply_cl_tweak(job.generatedCl, base_cv, prompt)
         job.generatedCl = updated_text
 
-    job.updatedAt = datetime.utcnow()
     db.commit()
     db.refresh(job)
 
@@ -505,9 +483,7 @@ def reset_job_tweaks(
     current_user: User = Depends(get_current_user),
 ):
     """Restore generatedCv / generatedCl from their pre-tweak snapshots."""
-    job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _get_job_or_404(db, job_id, current_user)
 
     if not (job.originalCv or job.originalCl):
         raise HTTPException(
@@ -518,7 +494,6 @@ def reset_job_tweaks(
         job.generatedCv = job.originalCv
     if job.originalCl:
         job.generatedCl = job.originalCl
-    job.updatedAt = datetime.utcnow()
     db.commit()
     db.refresh(job)
 

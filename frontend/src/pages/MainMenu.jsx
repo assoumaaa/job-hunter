@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 
-import BrandMark from "../components/BrandMark";
+import BrandMark from "components/BrandMark";
 
 const NAV = [
 	{ to: "/home", label: "Overview", Icon: LayoutDashboard },
@@ -55,13 +55,13 @@ export default function MainMenu() {
 	return (
 		<aside
 			className="flex-shrink-0 border-r border-zinc-200/80 flex flex-col bg-white h-screen transition-[width] duration-200 ease-out"
-			style={{ width: collapsed ? 64 : 224 }}
+			style={{ width: collapsed ? 60 : 196 }}
 		>
 			{/* Brand */}
 			<div
 				className={`flex items-center gap-2.5 h-14 border-b border-zinc-100 ${collapsed ? "justify-center px-0" : "px-4"}`}
 			>
-				<div className="h-7 w-7 rounded-lg bg-gradient-to-br from-zinc-900 to-zinc-700 flex items-center justify-center flex-shrink-0 shadow-sm">
+				<div className="h-7 w-7 rounded-lg bg-indigo-600 flex items-center justify-center flex-shrink-0 shadow-sm">
 					<BrandMark className="h-4 w-4 text-white" />
 				</div>
 				{!collapsed && (

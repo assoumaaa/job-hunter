@@ -3,7 +3,7 @@ import { CheckCircle2, XCircle, AlertTriangle, Info } from "lucide-react";
 
 const ICONS = {
 	success: <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />,
-	error:   <XCircle className="h-4 w-4 shrink-0 text-red-400" />,
+	error: <XCircle className="h-4 w-4 shrink-0 text-red-400" />,
 	warning: <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />,
 	default: <Info className="h-4 w-4 shrink-0 text-zinc-400" />,
 };

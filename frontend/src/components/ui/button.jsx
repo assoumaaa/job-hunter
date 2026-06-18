@@ -1,3 +1,5 @@
+import { forwardRef } from "react";
+
 import { cn } from "utils/cn";
 
 const variants = {
@@ -19,9 +21,13 @@ const sizes = {
 	icon: "h-9 w-9",
 };
 
-export function Button({ className, variant = "default", size = "default", disabled = false, children, ...props }) {
+export const Button = forwardRef(function Button(
+	{ className, variant = "default", size = "default", disabled = false, children, ...props },
+	ref,
+) {
 	return (
 		<button
+			ref={ref}
 			className={cn(
 				"inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-all duration-100",
 				"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-900/10 focus-visible:ring-offset-1 focus-visible:ring-offset-white",
@@ -36,4 +42,4 @@ export function Button({ className, variant = "default", size = "default", disab
 			{children}
 		</button>
 	);
-}
+});

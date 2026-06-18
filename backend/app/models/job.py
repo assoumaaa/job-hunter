@@ -19,7 +19,7 @@ class Job(Base):
     url = Column(String, nullable=True)
     salary = Column(String, nullable=True)
     jobType = Column(String, nullable=True)
-    source = Column(String, default="apify")
+    source = Column(String, default="manual")
     fetchedAt = Column(DateTime, default=datetime.utcnow)
 
     relevanceStatus = Column(String, default="unscreened")

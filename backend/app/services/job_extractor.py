@@ -66,6 +66,18 @@ def _linkedin_job_id(url: str) -> Optional[str]:
     return parts[0] if parts else None
 
 
+def normalize_job_url(url: str) -> str:
+    """Strip query params and trailing slash, collapse linkedin subdomains.
+
+    The canonical form used for dedup across fetched / manually-added jobs.
+    """
+    u = (url or "").split("?")[0].rstrip("/")
+    parsed = urlparse(u)
+    if "linkedin.com" in parsed.netloc:
+        u = f"https://linkedin.com{parsed.path}"
+    return u
+
+
 def _detect_source(url: str) -> str:
     host = urlparse(url).netloc.lower()
     if "linkedin.com" in host:
