@@ -103,7 +103,12 @@ export default function CV() {
 				const blob = await resp.blob();
 				setPdfUrl(URL.createObjectURL(blob));
 			} else {
-				alert("PDF generation failed");
+				let detail = `${resp.status} ${resp.statusText}`;
+				try {
+					const body = await resp.json();
+					if (body?.detail) detail = body.detail;
+				} catch {}
+				alert(`PDF generation failed: ${detail}`);
 			}
 		} finally {
 			setCompiling(false);
@@ -118,7 +123,11 @@ export default function CV() {
 				actions={
 					<>
 						<Button variant="outline" size="sm" onClick={save} disabled={saving}>
-							{saved ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <Save className="h-3.5 w-3.5" />}
+							{saved ? (
+								<CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+							) : (
+								<Save className="h-3.5 w-3.5" />
+							)}
 							{saved ? "Saved" : saving ? "Saving…" : "Save"}
 						</Button>
 						<Button variant="primary" size="sm" onClick={compile} disabled={compiling || !hasData}>
@@ -136,13 +145,48 @@ export default function CV() {
 
 					<Section title="Contact information">
 						<div className="grid grid-cols-2 gap-3">
-							<Field label="Full name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="John Doe" />
-							<Field label="Email" value={cv.header.email} onChange={(v) => updateHeader("email", v)} placeholder="john@example.com" />
-							<Field label="Phone" value={cv.header.phone} onChange={(v) => updateHeader("phone", v)} placeholder="+1 555 000 0000" />
-							<Field label="Location" value={cv.header.location} onChange={(v) => updateHeader("location", v)} placeholder="Berlin, Germany" />
-							<Field label="LinkedIn URL" value={cv.header.linkedin} onChange={(v) => updateHeader("linkedin", v)} placeholder="https://linkedin.com/in/…" />
-							<Field label="GitHub URL" value={cv.header.github} onChange={(v) => updateHeader("github", v)} placeholder="https://github.com/…" />
-							<Field label="Portfolio URL" value={cv.header.portfolio} onChange={(v) => updateHeader("portfolio", v)} placeholder="https://yoursite.dev" />
+							<Field
+								label="Full name"
+								value={cv.header.name}
+								onChange={(v) => updateHeader("name", v)}
+								placeholder="John Doe"
+							/>
+							<Field
+								label="Email"
+								value={cv.header.email}
+								onChange={(v) => updateHeader("email", v)}
+								placeholder="john@example.com"
+							/>
+							<Field
+								label="Phone"
+								value={cv.header.phone}
+								onChange={(v) => updateHeader("phone", v)}
+								placeholder="+1 555 000 0000"
+							/>
+							<Field
+								label="Location"
+								value={cv.header.location}
+								onChange={(v) => updateHeader("location", v)}
+								placeholder="Berlin, Germany"
+							/>
+							<Field
+								label="LinkedIn URL"
+								value={cv.header.linkedin}
+								onChange={(v) => updateHeader("linkedin", v)}
+								placeholder="https://linkedin.com/in/…"
+							/>
+							<Field
+								label="GitHub URL"
+								value={cv.header.github}
+								onChange={(v) => updateHeader("github", v)}
+								placeholder="https://github.com/…"
+							/>
+							<Field
+								label="Portfolio URL"
+								value={cv.header.portfolio}
+								onChange={(v) => updateHeader("portfolio", v)}
+								placeholder="https://yoursite.dev"
+							/>
 						</div>
 					</Section>
 
@@ -168,15 +212,38 @@ export default function CV() {
 						{cv.experience.map((exp, i) => (
 							<ListItem
 								key={i}
-								onRemove={() => setCv((p) => ({ ...p, experience: p.experience.filter((_, j) => j !== i) }))}
+								onRemove={() =>
+									setCv((p) => ({ ...p, experience: p.experience.filter((_, j) => j !== i) }))
+								}
 							>
 								<div className="grid grid-cols-2 gap-2.5">
-									<Field label="Company"  value={exp.company}  onChange={(v) => updateExperience(i, "company", v)} />
-									<Field label="Job title" value={exp.title}   onChange={(v) => updateExperience(i, "title", v)} />
-									<Field label="Period"   value={exp.period}   onChange={(v) => updateExperience(i, "period", v)} placeholder="Jan 2022 – Present" />
-									<Field label="Location" value={exp.location} onChange={(v) => updateExperience(i, "location", v)} placeholder="Remote" />
+									<Field
+										label="Company"
+										value={exp.company}
+										onChange={(v) => updateExperience(i, "company", v)}
+									/>
+									<Field
+										label="Job title"
+										value={exp.title}
+										onChange={(v) => updateExperience(i, "title", v)}
+									/>
+									<Field
+										label="Period"
+										value={exp.period}
+										onChange={(v) => updateExperience(i, "period", v)}
+										placeholder="Jan 2022 – Present"
+									/>
+									<Field
+										label="Location"
+										value={exp.location}
+										onChange={(v) => updateExperience(i, "location", v)}
+										placeholder="Remote"
+									/>
 								</div>
-								<BulletEditor bullets={exp.bullets || []} onChange={(v) => updateExperience(i, "bullets", v)} />
+								<BulletEditor
+									bullets={exp.bullets || []}
+									onChange={(v) => updateExperience(i, "bullets", v)}
+								/>
 							</ListItem>
 						))}
 						<Button
@@ -185,7 +252,10 @@ export default function CV() {
 							onClick={() =>
 								setCv((p) => ({
 									...p,
-									experience: [...p.experience, { company: "", title: "", period: "", location: "", bullets: [""] }],
+									experience: [
+										...p.experience,
+										{ company: "", title: "", period: "", location: "", bullets: [""] },
+									],
 								}))
 							}
 						>
@@ -197,32 +267,61 @@ export default function CV() {
 						{cv.projects.map((proj, i) => (
 							<ListItem
 								key={i}
-								onRemove={() => setCv((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))}
+								onRemove={() =>
+									setCv((p) => ({ ...p, projects: p.projects.filter((_, j) => j !== i) }))
+								}
 							>
 								<div className="grid grid-cols-2 gap-2.5">
-									<Field label="Name" value={proj.name} onChange={(v) => {
-										const next = [...cv.projects]; next[i] = { ...next[i], name: v };
-										setCv((p) => ({ ...p, projects: next }));
-									}} />
-									<Field label="Badge" value={proj.badge} onChange={(v) => {
-										const next = [...cv.projects]; next[i] = { ...next[i], badge: v };
-										setCv((p) => ({ ...p, projects: next }));
-									}} placeholder="Open Source" />
+									<Field
+										label="Name"
+										value={proj.name}
+										onChange={(v) => {
+											const next = [...cv.projects];
+											next[i] = { ...next[i], name: v };
+											setCv((p) => ({ ...p, projects: next }));
+										}}
+									/>
+									<Field
+										label="Badge"
+										value={proj.badge}
+										onChange={(v) => {
+											const next = [...cv.projects];
+											next[i] = { ...next[i], badge: v };
+											setCv((p) => ({ ...p, projects: next }));
+										}}
+										placeholder="Open Source"
+									/>
 								</div>
-								<Field label="Description" value={proj.description} onChange={(v) => {
-									const next = [...cv.projects]; next[i] = { ...next[i], description: v };
-									setCv((p) => ({ ...p, projects: next }));
-								}} />
-								<Field label="Tech stack" value={proj.tech} onChange={(v) => {
-									const next = [...cv.projects]; next[i] = { ...next[i], tech: v };
-									setCv((p) => ({ ...p, projects: next }));
-								}} placeholder="Python, React, PostgreSQL" />
+								<Field
+									label="Description"
+									value={proj.description}
+									onChange={(v) => {
+										const next = [...cv.projects];
+										next[i] = { ...next[i], description: v };
+										setCv((p) => ({ ...p, projects: next }));
+									}}
+								/>
+								<Field
+									label="Tech stack"
+									value={proj.tech}
+									onChange={(v) => {
+										const next = [...cv.projects];
+										next[i] = { ...next[i], tech: v };
+										setCv((p) => ({ ...p, projects: next }));
+									}}
+									placeholder="Python, React, PostgreSQL"
+								/>
 							</ListItem>
 						))}
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCv((p) => ({ ...p, projects: [...p.projects, { name: "", badge: "", description: "", tech: "" }] }))}
+							onClick={() =>
+								setCv((p) => ({
+									...p,
+									projects: [...p.projects, { name: "", badge: "", description: "", tech: "" }],
+								}))
+							}
 						>
 							<Plus className="h-3.5 w-3.5" /> Add project
 						</Button>
@@ -232,32 +331,64 @@ export default function CV() {
 						{cv.education.map((edu, i) => (
 							<ListItem
 								key={i}
-								onRemove={() => setCv((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))}
+								onRemove={() =>
+									setCv((p) => ({ ...p, education: p.education.filter((_, j) => j !== i) }))
+								}
 							>
 								<div className="grid grid-cols-2 gap-2.5">
-									<Field label="Degree" value={edu.degree} onChange={(v) => {
-										const next = [...cv.education]; next[i] = { ...next[i], degree: v };
-										setCv((p) => ({ ...p, education: next }));
-									}} />
-									<Field label="Institution" value={edu.institution} onChange={(v) => {
-										const next = [...cv.education]; next[i] = { ...next[i], institution: v };
-										setCv((p) => ({ ...p, education: next }));
-									}} />
-									<Field label="Year" value={edu.year} onChange={(v) => {
-										const next = [...cv.education]; next[i] = { ...next[i], year: v };
-										setCv((p) => ({ ...p, education: next }));
-									}} placeholder="2019" />
-									<Field label="Description" value={edu.description} onChange={(v) => {
-										const next = [...cv.education]; next[i] = { ...next[i], description: v };
-										setCv((p) => ({ ...p, education: next }));
-									}} placeholder="Optional" />
+									<Field
+										label="Degree"
+										value={edu.degree}
+										onChange={(v) => {
+											const next = [...cv.education];
+											next[i] = { ...next[i], degree: v };
+											setCv((p) => ({ ...p, education: next }));
+										}}
+									/>
+									<Field
+										label="Institution"
+										value={edu.institution}
+										onChange={(v) => {
+											const next = [...cv.education];
+											next[i] = { ...next[i], institution: v };
+											setCv((p) => ({ ...p, education: next }));
+										}}
+									/>
+									<Field
+										label="Year"
+										value={edu.year}
+										onChange={(v) => {
+											const next = [...cv.education];
+											next[i] = { ...next[i], year: v };
+											setCv((p) => ({ ...p, education: next }));
+										}}
+										placeholder="2019"
+									/>
+									<Field
+										label="Description"
+										value={edu.description}
+										onChange={(v) => {
+											const next = [...cv.education];
+											next[i] = { ...next[i], description: v };
+											setCv((p) => ({ ...p, education: next }));
+										}}
+										placeholder="Optional"
+									/>
 								</div>
 							</ListItem>
 						))}
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCv((p) => ({ ...p, education: [...p.education, { degree: "", institution: "", year: "", description: "" }] }))}
+							onClick={() =>
+								setCv((p) => ({
+									...p,
+									education: [
+										...p.education,
+										{ degree: "", institution: "", year: "", description: "" },
+									],
+								}))
+							}
 						>
 							<Plus className="h-3.5 w-3.5" /> Add education
 						</Button>
@@ -267,28 +398,50 @@ export default function CV() {
 						{cv.certifications.map((cert, i) => (
 							<ListItem
 								key={i}
-								onRemove={() => setCv((p) => ({ ...p, certifications: p.certifications.filter((_, j) => j !== i) }))}
+								onRemove={() =>
+									setCv((p) => ({ ...p, certifications: p.certifications.filter((_, j) => j !== i) }))
+								}
 							>
 								<div className="grid grid-cols-3 gap-2.5">
-									<Field label="Title" value={cert.title} onChange={(v) => {
-										const next = [...cv.certifications]; next[i] = { ...next[i], title: v };
-										setCv((p) => ({ ...p, certifications: next }));
-									}} />
-									<Field label="Organization" value={cert.org} onChange={(v) => {
-										const next = [...cv.certifications]; next[i] = { ...next[i], org: v };
-										setCv((p) => ({ ...p, certifications: next }));
-									}} />
-									<Field label="Year" value={cert.year} onChange={(v) => {
-										const next = [...cv.certifications]; next[i] = { ...next[i], year: v };
-										setCv((p) => ({ ...p, certifications: next }));
-									}} />
+									<Field
+										label="Title"
+										value={cert.title}
+										onChange={(v) => {
+											const next = [...cv.certifications];
+											next[i] = { ...next[i], title: v };
+											setCv((p) => ({ ...p, certifications: next }));
+										}}
+									/>
+									<Field
+										label="Organization"
+										value={cert.org}
+										onChange={(v) => {
+											const next = [...cv.certifications];
+											next[i] = { ...next[i], org: v };
+											setCv((p) => ({ ...p, certifications: next }));
+										}}
+									/>
+									<Field
+										label="Year"
+										value={cert.year}
+										onChange={(v) => {
+											const next = [...cv.certifications];
+											next[i] = { ...next[i], year: v };
+											setCv((p) => ({ ...p, certifications: next }));
+										}}
+									/>
 								</div>
 							</ListItem>
 						))}
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCv((p) => ({ ...p, certifications: [...p.certifications, { title: "", org: "", year: "" }] }))}
+							onClick={() =>
+								setCv((p) => ({
+									...p,
+									certifications: [...p.certifications, { title: "", org: "", year: "" }],
+								}))
+							}
 						>
 							<Plus className="h-3.5 w-3.5" /> Add certification
 						</Button>
@@ -300,14 +453,25 @@ export default function CV() {
 								key={i}
 								onRemove={() => setCv((p) => ({ ...p, skills: p.skills.filter((_, j) => j !== i) }))}
 							>
-								<Field label="Category" value={skill.category} onChange={(v) => {
-									const next = [...cv.skills]; next[i] = { ...next[i], category: v };
-									setCv((p) => ({ ...p, skills: next }));
-								}} placeholder="Languages, Frameworks, Tools…" />
-								<TagEditor tags={skill.items || []} onChange={(v) => {
-									const next = [...cv.skills]; next[i] = { ...next[i], items: v };
-									setCv((p) => ({ ...p, skills: next }));
-								}} placeholder="Add skill" />
+								<Field
+									label="Category"
+									value={skill.category}
+									onChange={(v) => {
+										const next = [...cv.skills];
+										next[i] = { ...next[i], category: v };
+										setCv((p) => ({ ...p, skills: next }));
+									}}
+									placeholder="Languages, Frameworks, Tools…"
+								/>
+								<TagEditor
+									tags={skill.items || []}
+									onChange={(v) => {
+										const next = [...cv.skills];
+										next[i] = { ...next[i], items: v };
+										setCv((p) => ({ ...p, skills: next }));
+									}}
+									placeholder="Add skill"
+								/>
 							</ListItem>
 						))}
 						<Button
@@ -323,24 +487,40 @@ export default function CV() {
 						{cv.languages.map((lang, i) => (
 							<ListItem
 								key={i}
-								onRemove={() => setCv((p) => ({ ...p, languages: p.languages.filter((_, j) => j !== i) }))}
+								onRemove={() =>
+									setCv((p) => ({ ...p, languages: p.languages.filter((_, j) => j !== i) }))
+								}
 							>
 								<div className="grid grid-cols-2 gap-2.5">
-									<Field label="Language" value={lang.name} onChange={(v) => {
-										const next = [...cv.languages]; next[i] = { ...next[i], name: v };
-										setCv((p) => ({ ...p, languages: next }));
-									}} placeholder="English" />
-									<Field label="Level" value={lang.level} onChange={(v) => {
-										const next = [...cv.languages]; next[i] = { ...next[i], level: v };
-										setCv((p) => ({ ...p, languages: next }));
-									}} placeholder="Fluent, Native, Conversational…" />
+									<Field
+										label="Language"
+										value={lang.name}
+										onChange={(v) => {
+											const next = [...cv.languages];
+											next[i] = { ...next[i], name: v };
+											setCv((p) => ({ ...p, languages: next }));
+										}}
+										placeholder="English"
+									/>
+									<Field
+										label="Level"
+										value={lang.level}
+										onChange={(v) => {
+											const next = [...cv.languages];
+											next[i] = { ...next[i], level: v };
+											setCv((p) => ({ ...p, languages: next }));
+										}}
+										placeholder="Fluent, Native, Conversational…"
+									/>
 								</div>
 							</ListItem>
 						))}
 						<Button
 							variant="outline"
 							size="sm"
-							onClick={() => setCv((p) => ({ ...p, languages: [...p.languages, { name: "", level: "" }] }))}
+							onClick={() =>
+								setCv((p) => ({ ...p, languages: [...p.languages, { name: "", level: "" }] }))
+							}
 						>
 							<Plus className="h-3.5 w-3.5" /> Add language
 						</Button>
