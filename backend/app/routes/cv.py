@@ -1,5 +1,5 @@
-from datetime import datetime
 import json
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -9,7 +9,13 @@ from ..core.auth import get_current_user
 from ..core.db import get_db
 from ..models.cv import CV
 from ..models.user import User
-from ..schemas.cv import CLCompileRequest, CVCompileRequest, CVOut, CVParseTextRequest, CVUpdateRequest
+from ..schemas.cv import (
+    CLCompileRequest,
+    CVCompileRequest,
+    CVOut,
+    CVParseTextRequest,
+    CVUpdateRequest,
+)
 from ..services import claude, cv_parser, pdf_generator
 
 router = APIRouter(prefix="/cv", tags=["cv"])
@@ -75,30 +81,22 @@ def parse_cv_text(
     return {"structuredData": parsed}
 
 
-@router.post("/estimate")
-def estimate_cv(
-    body: CVCompileRequest,
-    current_user: User = Depends(get_current_user),
-):
-    """Estimate page count for a CV without rendering."""
-    return pdf_generator.estimate_cv_pages(body.structuredData)
-
-
 @router.post("/compile")
 def compile_cv(
     body: CVCompileRequest,
-    trim: bool = True,
+    trim: bool = False,
     current_user: User = Depends(get_current_user),
 ):
     """Render structured CV data to PDF via WeasyPrint.
 
-    `trim=true` (default) lets Haiku shorten bullets if CSS auto-fit can't squeeze
-    the CV to one page. Disable with `?trim=false` for fast preview renders
-    (e.g. the tweak page) where extra latency hurts UX and content distortion
-    would confuse the user.
+    WYSIWYG by default: renders the submitted data verbatim with CSS auto-fit
+    only. Content trimming happens once at generation/tweak time and is
+    persisted there, so every view of a stored CV shows identical content.
+    `?trim=true` (explicit opt-in) lets Haiku shorten wording at render time
+    without saving — the result won't match the stored data.
     """
     try:
-        pdf_bytes = pdf_generator.generate_pdf(
+        pdf_bytes, _ = pdf_generator.fit_and_render(
             body.structuredData,
             lang=body.lang,
             page_format=body.pageFormat,
@@ -112,7 +110,7 @@ def compile_cv(
             headers={"Content-Disposition": f"inline; filename={filename}"},
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/compile-cl")
@@ -135,4 +133,4 @@ def compile_cover_letter(
             headers={"Content-Disposition": f"inline; filename={filename}"},
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

@@ -42,6 +42,11 @@ class Job(Base):
     originalCv = Column(String, nullable=True)
     originalCl = Column(String, nullable=True)
 
+    # Running transcripts for the edit-a-CV chat assistant, one per target.
+    # JSON arrays of {"role": "user"|"assistant", "content": str}.
+    chatCv = Column(String, nullable=True)
+    chatCl = Column(String, nullable=True)
+
     createdAt = Column(DateTime, default=datetime.utcnow)
     updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

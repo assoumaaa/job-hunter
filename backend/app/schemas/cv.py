@@ -1,15 +1,15 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class CVOut(BaseModel):
-    id: Optional[str] = None
-    userId: Optional[str] = None
-    latexSource: Optional[str] = None  # legacy
-    structuredData: Optional[str] = None  # JSON string
-    updatedAt: Optional[datetime] = None
+    id: str | None = None
+    userId: str | None = None
+    latexSource: str | None = None  # legacy
+    structuredData: str | None = None  # JSON string
+    updatedAt: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -26,7 +26,7 @@ class CVCompileRequest(BaseModel):
 
 class CLCompileRequest(BaseModel):
     text: str
-    contact: Optional[Dict[str, Any]] = None
+    contact: dict[str, Any] | None = None
     pageFormat: str = "a4"
 
 

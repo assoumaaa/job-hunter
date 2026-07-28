@@ -1,9 +1,9 @@
+
 from pydantic import BaseModel, EmailStr
-from typing import Optional
 
 
 class RegisterRequest(BaseModel):
-    name: Optional[str] = None
+    name: str | None = None
     email: EmailStr
     password: str
 
@@ -20,7 +20,7 @@ class TokenResponse(BaseModel):
 
 class UserOut(BaseModel):
     id: str
-    name: Optional[str] = None
+    name: str | None = None
     email: str
 
     model_config = {"from_attributes": True}

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
-from urllib.parse import urlencode, quote
+from urllib.parse import quote
 
 from apify_client import ApifyClient
 
@@ -10,7 +9,7 @@ from ..core.config import settings
 
 # Country code → LinkedIn geoId + locationName
 # Same subset as the TypeScript version
-COUNTRIES: Dict[str, dict] = {
+COUNTRIES: dict[str, dict] = {
     "AE": {"geoId": "104305776", "locationName": "United Arab Emirates"},
     "AU": {"geoId": "101452733", "locationName": "Australia"},
     "CA": {"geoId": "101174742", "locationName": "Canada"},
@@ -39,17 +38,19 @@ class ApifyJob:
     location: str
     description: str
     url: str
-    salary: Optional[str] = None
-    job_type: Optional[str] = None
-    seniority_level: Optional[str] = None
+    salary: str | None = None
+    job_type: str | None = None
+    seniority_level: str | None = None
 
 
 def fetch_linkedin_jobs(
-    positions: List[str],
-    country_codes: List[str] = [],
+    positions: list[str],
+    country_codes: list[str] | None = None,
     date_posted: str = "month",
-    job_types: List[str] = ["fulltime"],
-) -> List[ApifyJob]:
+    job_types: list[str] | None = None,
+) -> list[ApifyJob]:
+    country_codes = [] if country_codes is None else country_codes
+    job_types = ["fulltime"] if job_types is None else job_types
     apify = ApifyClient(settings.APIFY_TOKEN)
 
     tpr = DATE_POSTED_FILTERS.get(date_posted, DATE_POSTED_FILTERS["month"])

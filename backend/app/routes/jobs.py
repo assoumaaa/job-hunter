@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..core.auth import get_current_user
 from ..core.db import get_db
-from ..models import CV, Job, Position, Profile, User
+from ..models import Job, User
 from ..schemas.job import (
     ExtractedJobResponse,
     ExtractUrlRequest,
@@ -24,7 +24,7 @@ from ..schemas.job import (
     TweakRequest,
     TweakResponse,
 )
-from ..services import claude, apify, job_extractor
+from ..services import claude, intake, job_extractor, pdf_generator
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -34,12 +34,6 @@ def _get_job_or_404(db: Session, job_id: str, current_user: User) -> Job:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
-
-
-def _profile_list(profile, attr, default=None):
-    """Decode a JSON-list column off the profile, guarding None/empty."""
-    raw = getattr(profile, attr, None) if profile else None
-    return json.loads(raw) if raw else (default or [])
 
 
 @router.get("", response_model=list[JobOut])
@@ -107,12 +101,12 @@ def extract_url(
     try:
         extracted = job_extractor.extract_from_url(url)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(
             status_code=502,
             detail=f"Failed to fetch the page: {e.__class__.__name__}",
-        )
+        ) from e
     return ExtractedJobResponse(
         title=extracted.title,
         company=extracted.company,
@@ -168,105 +162,10 @@ def generate_cv(
 ):
     if not body.jobIds:
         raise HTTPException(status_code=400, detail="No job IDs provided")
-
-    base_cv_data = _load_user_base_cv(
-        db, current_user, detail="No CV found. Please upload your CV first."
-    )
-    profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
-
-    languages = _profile_list(profile, "languages")
-    keywords = _profile_list(profile, "keywords")
-
-    profile_context = ""
-    if profile:
-        lang_str = (
-            ", ".join(f"{l['name']} ({l['level']})" for l in languages)
-            if languages
-            else ""
-        )
-        kw_str = ", ".join(keywords) if keywords else ""
-        profile_context = (
-            f"\nCANDIDATE PROFILE:\n"
-            f"- Years of experience: {profile.totalYearsExperience or 'unknown'}\n"
-            f"- Seniority: {profile.seniority or 'unknown'}\n"
-            f"- Current location: {profile.currentLocation or 'unknown'}\n"
-            f"- Preferred locations: {profile.preferredLocations or 'any'}\n"
-            f"- Notice period: {profile.noticePeriod or 'unknown'}"
-            + (f"\n- Languages: {lang_str}" if lang_str else "")
-            + (f"\n- Key skills/keywords to emphasize: {kw_str}" if kw_str else "")
-        )
-
-    candidate_name = (
-        (profile.fullName if profile else None) or current_user.name or "Candidate"
-    )
-    linkedin_url = profile.linkedinUrl if profile else None
-    github_url = profile.githubUrl if profile else None
-    narrative = profile.narrative if profile else None
-
-    results = []
-    for job_id in body.jobIds:
-        job = (
-            db.query(Job)
-            .filter(Job.id == job_id, Job.userId == current_user.id)
-            .first()
-        )
-        if not job:
-            continue
-
-        job.agentStatus = "generating"
-        db.commit()
-
-        archetype = job.archetype
-        candidate_years = profile.totalYearsExperience if profile else None
-
-        # Status callback flips the job to "reviewing" once we start iterating
-        def _on_pass(pass_num, _score, _job=job):
-            if pass_num >= 2:
-                _job.agentStatus = "reviewing"
-                db.commit()
-
-        result = claude.tailor_cv_iterative(
-            base_cv=base_cv_data,
-            job_description=job.description or "",
-            job_title=job.title,
-            company=job.company,
-            profile_context=profile_context,
-            candidate_name=candidate_name,
-            linkedin_url=linkedin_url,
-            github_url=github_url,
-            archetype=archetype,
-            narrative=narrative,
-            candidate_years=candidate_years,
-            on_pass=_on_pass,
-        )
-
-        # Assemble final CV: generated sections + base header + base languages
-        # (Claude's output schema doesn't include languages — they're factual, not tailored)
-        assembled = {**result.resume}
-        assembled["header"] = base_cv_data.get("header", {})
-        assembled["languages"] = base_cv_data.get("languages", [])
-
-        job.agentStatus = "rejected" if result.ats_score < 60 else "done"
-        job.atsScore = result.ats_score
-        job.atsBreakdown = json.dumps(
-            {
-                "keyword": result.ats_breakdown.keyword,
-                "requirements": result.ats_breakdown.experience,
-                "format": result.ats_breakdown.format,
-                "semantic": result.ats_breakdown.skills,
-                "impact": result.ats_breakdown.impact,
-                "decision": result.ats_breakdown.decision,
-                "gaps": result.ats_breakdown.gaps,
-            }
-        )
-        job.generatedCv = json.dumps(assembled)
-        job.generatedCl = result.cover_letter
-        job.generatedAt = datetime.utcnow()
-        db.commit()
-        db.refresh(job)
-        results.append(job)
-
-    return results
+    try:
+        return intake.generate_for_jobs(db, current_user, body.jobIds)
+    except intake.IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
 
 
 @router.post("/screen", response_model=ScreenResult)
@@ -275,85 +174,16 @@ def screen_jobs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    selected_ids = body.ids if body.ids else None
-
-    query = db.query(Job).filter(Job.userId == current_user.id)
-    if selected_ids:
-        query = query.filter(Job.id.in_(selected_ids))
-    else:
-        query = query.filter(Job.relevanceStatus == "unscreened")
-
-    unscreened = query.with_entities(
-        Job.id, Job.title, Job.company, Job.description, Job.location
-    ).all()
-    positions = db.query(Position).filter(Position.userId == current_user.id).all()
-    profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
-
-    if not unscreened:
-        return ScreenResult(screened=0, good_fit=0, maybe=0, irrelevant=0)
-    if not positions:
-        raise HTTPException(status_code=400, detail="No positions configured.")
-
-    keywords = _profile_list(profile, "keywords")
-    languages = _profile_list(profile, "languages")
-    deal_breakers = _profile_list(profile, "dealBreakers")
-    preferred_locations = _profile_list(profile, "preferredLocations")
-
-    # Send full CV — cached via Anthropic prompt caching (90% cheaper on batches 2+)
-    user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
-    base_cv = user_cv.structuredData if user_cv and user_cv.structuredData else ""
-
-    jobs_payload = [
-        {
-            "id": j.id,
-            "title": j.title,
-            "company": j.company,
-            "description": j.description,
-            "location": j.location,
-        }
-        for j in unscreened
-    ]
-    profile_payload = {
-        "seniority": profile.seniority if profile else "",
-        "totalYearsExperience": profile.totalYearsExperience if profile else None,
-        "keywords_list": keywords,
-        "languages_list": languages,
-        "narrative": profile.narrative if profile else "",
-        "deal_breakers": deal_breakers,
-        "preferred_locations": preferred_locations,
-    }
-
-    results = claude.screen_jobs(
-        jobs_payload, [p.label for p in positions], profile_payload, base_cv
-    )
-
-    by_fit: dict[str, list[str]] = {"good_fit": [], "maybe": [], "irrelevant": []}
-    for r in results:
-        fit = r.get("fit", "maybe")
-        by_fit.setdefault(fit, []).append(r["id"])
-
-        # Store per-job screening details
-        job_id = r.get("id")
-        if job_id:
-            update_fields = {"relevanceStatus": fit}
-            if "score" in r:
-                update_fields["screeningScore"] = str(r["score"])
-            if "reason" in r:
-                update_fields["screeningReason"] = r["reason"]
-            if "archetype" in r:
-                update_fields["archetype"] = r["archetype"]
-            db.query(Job).filter(
-                Job.id == job_id, Job.userId == current_user.id
-            ).update(update_fields, synchronize_session=False)
-
-    db.commit()
-
+    try:
+        outcome = intake.screen(db, current_user, body.ids)
+    except intake.IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     return ScreenResult(
-        screened=len(results),
-        good_fit=len(by_fit["good_fit"]),
-        maybe=len(by_fit["maybe"]),
-        irrelevant=len(by_fit["irrelevant"]),
-        details=results,
+        screened=outcome.screened,
+        good_fit=outcome.good_fit,
+        maybe=outcome.maybe,
+        irrelevant=outcome.irrelevant,
+        details=outcome.details,
     )
 
 
@@ -363,65 +193,11 @@ def fetch_jobs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    positions = db.query(Position).filter(Position.userId == current_user.id).all()
-    if not positions:
-        raise HTTPException(
-            status_code=400,
-            detail="No positions configured. Add some in the Positions tab first.",
-        )
-
-    profile = db.query(Profile).filter(Profile.userId == current_user.id).first()
-    country_codes = _profile_list(profile, "preferredLocations")
-    job_types = _profile_list(profile, "jobTypes", ["fulltime"])
-    position_labels = [p.label for p in positions]
-
-    normalize = job_extractor.normalize_job_url
-    existing_rows = db.query(Job.url).filter(Job.userId == current_user.id).all()
-    existing_urls = {normalize(r.url or "") for r in existing_rows}
-
-    fetched = apify.fetch_linkedin_jobs(
-        position_labels,
-        country_codes,
-        body.datePosted,
-        job_types,
-    )
-    new_jobs = [j for j in fetched if normalize(j.url or "") not in existing_urls]
-    for j in new_jobs:
-        norm = normalize(j.url or "")
-        existing_urls.add(norm)
-        db.add(
-            Job(
-                userId=current_user.id,
-                title=j.title,
-                company=j.company,
-                location=j.location,
-                description=j.description,
-                url=norm,
-                salary=j.salary,
-                jobType=j.job_type or j.seniority_level,
-                source="linkedin",
-                agentStatus="pending",
-                applicationStatus="new",
-                fetchedAt=datetime.utcnow(),
-            )
-        )
-
-    db.commit()
-    return SyncResult(
-        inserted=len(new_jobs),
-        skipped=len(fetched) - len(new_jobs),
-    )
-
-
-def _load_user_base_cv(
-    db, current_user, *, required=True, detail="No base CV on file."
-):
-    user_cv = db.query(CV).filter(CV.userId == current_user.id).first()
-    if not user_cv or not user_cv.structuredData:
-        if required:
-            raise HTTPException(status_code=400, detail=detail)
-        return None
-    return json.loads(user_cv.structuredData)
+    try:
+        outcome = intake.fetch(db, current_user, body.datePosted)
+    except intake.IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+    return SyncResult(inserted=outcome.inserted, skipped=outcome.skipped)
 
 
 @router.post("/{job_id}/tweak", response_model=TweakResponse)
@@ -431,10 +207,12 @@ def tweak_job_doc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Apply a plain-English tweak to the generated CV or cover letter.
+    """Run one turn of the edit-a-CV chat over the generated CV or cover letter.
 
-    Snapshots the original on first invocation so the user can reset later.
-    Uses Haiku — cheap, mechanical edit. Does NOT re-run the ATS scoring loop.
+    The assistant may ask a clarifying question instead of editing — in that
+    case `message` carries the question and the document is left unchanged.
+    Snapshots the original on the first edit so the user can reset later. Uses
+    Sonnet (judgment); does NOT re-run the ATS scoring loop.
     """
     if body.target not in ("cv", "cl"):
         raise HTTPException(status_code=400, detail="target must be 'cv' or 'cl'")
@@ -444,35 +222,76 @@ def tweak_job_doc(
 
     job = _get_job_or_404(db, job_id, current_user)
 
-    base_cv = _load_user_base_cv(db, current_user)
+    base_cv = intake.load_base_cv(db, current_user)
+    if base_cv is None:
+        raise HTTPException(status_code=400, detail="No base CV on file.")
 
     if body.target == "cv":
         if not job.generatedCv:
             raise HTTPException(status_code=400, detail="Job has no generated CV yet")
         current_cv = json.loads(job.generatedCv)
-        # Snapshot original on first tweak
-        if not job.originalCv:
-            job.originalCv = job.generatedCv
-        updated = claude.apply_cv_tweak(current_cv, base_cv, prompt)
-        job.generatedCv = json.dumps(updated)
+        history = json.loads(job.chatCv) if job.chatCv else []
+        result = claude.chat_edit_cv(
+            history,
+            current_cv,
+            base_cv,
+            prompt,
+            job_title=job.title,
+            company=job.company,
+            job_description=job.description or "",
+        )
+        message = result["message"]
+        if result["updated_cv"] is not None:
+            # Snapshot original on the first actual edit
+            if not job.originalCv:
+                job.originalCv = job.generatedCv
+            # Re-fit after the edit so the stored CV stays one page. The trimmed
+            # JSON is what we persist, so the preview matches exactly.
+            _, updated = pdf_generator.fit_and_render(
+                result["updated_cv"], trim_callback=claude.trim_resume_for_fit
+            )
+            job.generatedCv = json.dumps(updated)
+        history = history + [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": message},
+        ]
+        job.chatCv = json.dumps(history)
     else:  # cl
         if not job.generatedCl:
             raise HTTPException(
                 status_code=400, detail="Job has no generated cover letter yet"
             )
-        if not job.originalCl:
-            job.originalCl = job.generatedCl
-        updated_text = claude.apply_cl_tweak(job.generatedCl, base_cv, prompt)
-        job.generatedCl = updated_text
+        history = json.loads(job.chatCl) if job.chatCl else []
+        result = claude.chat_edit_cl(
+            history,
+            job.generatedCl,
+            base_cv,
+            prompt,
+            job_title=job.title,
+            company=job.company,
+            job_description=job.description or "",
+        )
+        message = result["message"]
+        if result["updated_cl"] is not None:
+            if not job.originalCl:
+                job.originalCl = job.generatedCl
+            job.generatedCl = result["updated_cl"]
+        history = history + [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": message},
+        ]
+        job.chatCl = json.dumps(history)
 
     db.commit()
     db.refresh(job)
 
     return TweakResponse(
         target=body.target,
+        message=message,
         generatedCv=job.generatedCv,
         generatedCl=job.generatedCl,
         hasOriginal=bool(job.originalCv or job.originalCl),
+        history=history,
     )
 
 

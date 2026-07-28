@@ -8,74 +8,14 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Optional
 
-import anthropic
 import pymupdf
 
-from ..core.config import settings
+from . import llm, resume
 
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-# Same model as generation — quality matters for one-shot parsing
-PARSER_MODEL = "claude-haiku-4-5-20251001"
-
-CV_SCHEMA = """{
-  "header": {
-    "name": "string",
-    "email": "string",
-    "phone": "string or null",
-    "location": "string or null",
-    "linkedin": "string or null (full URL)",
-    "github": "string or null (full URL)",
-    "portfolio": "string or null (full URL)"
-  },
-  "summary": "string (professional summary paragraph, or empty string if none)",
-  "experience": [
-    {
-      "company": "string",
-      "title": "string (job title)",
-      "location": "string or null",
-      "period": "string (e.g. 'Jan 2022 - Present')",
-      "bullets": ["string (achievement/responsibility)"]
-    }
-  ],
-  "projects": [
-    {
-      "name": "string",
-      "badge": "string or null (e.g. 'Open Source', 'SaaS')",
-      "description": "string",
-      "tech": "string or null (tech stack)"
-    }
-  ],
-  "education": [
-    {
-      "degree": "string",
-      "institution": "string",
-      "year": "string",
-      "description": "string or null"
-    }
-  ],
-  "certifications": [
-    {
-      "title": "string",
-      "org": "string",
-      "year": "string or null"
-    }
-  ],
-  "skills": [
-    {
-      "category": "string (e.g. 'Languages', 'Frameworks', 'Tools')",
-      "items": ["string"]
-    }
-  ],
-  "languages": [
-    {
-      "name": "string (e.g. 'English')",
-      "level": "string or null (e.g. 'Fluent', 'Native', 'Conversational')"
-    }
-  ]
-}"""
+# The résumé shape is owned by the `resume` module — one definition for parse,
+# generate, and render.
+CV_SCHEMA = resume.SCHEMA_JSON
 
 PARSE_PROMPT = f"""Parse the following CV/resume text into structured JSON.
 
@@ -103,9 +43,9 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 def parse_cv_text(text: str) -> dict:
-    """Use Claude to parse raw CV text into structured JSON."""
-    response = client.messages.create(
-        model=PARSER_MODEL,
+    """Use the model to parse raw CV text into structured JSON."""
+    raw = llm.complete_text(
+        model=llm.SCREENING_MODEL,
         max_tokens=4096,
         messages=[
             {
@@ -115,19 +55,16 @@ def parse_cv_text(text: str) -> dict:
         ],
     )
 
-    raw = response.content[0].text.strip() if response.content[0].type == "text" else "{}"
-
-    # Strip markdown fences if present
-    raw = re.sub(r"^```(?:json)?\n?", "", raw, flags=re.IGNORECASE)
-    raw = raw.rstrip("`").strip()
-
+    raw = llm.strip_fences(raw) or "{}"
     # Try to extract JSON object if there's extra text
     if not raw.startswith("{"):
         match = re.search(r"\{[\s\S]*\}", raw)
         if match:
             raw = match.group(0)
 
-    return json.loads(raw)
+    # Normalize into the canonical résumé shape so parse output can't drift
+    # from what generation and rendering expect.
+    return resume.normalize(json.loads(raw))
 
 
 def parse_pdf(pdf_bytes: bytes) -> dict:

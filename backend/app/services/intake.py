@@ -1,0 +1,292 @@
+"""Job intake and scoring pipeline — one seam over fetch, screen, and generate.
+
+The three route handlers cross this interface and do nothing else: validate the
+request, call one function here, serialize the result. Everything in between —
+loading the base CV, building the model's profile context, sequencing
+tailor -> fit -> persist, mapping fetched postings onto Job rows, bucketing
+screen results — lives behind this seam.
+
+Domain preconditions raise `IntakeError`, which carries the HTTP status the
+route should surface; the route is the only place that knows about HTTP.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from sqlalchemy.orm import Session
+
+from ..models import CV, Job, Position, Profile, User
+from . import apify, ats_scorer, claude, job_extractor, pdf_generator, resume
+
+
+class IntakeError(Exception):
+    """A domain precondition failed (no CV, no positions, ...).
+
+    `status_code` is the HTTP status the route should map this to.
+    """
+
+    def __init__(self, message: str, status_code: int = 400) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+
+@dataclass
+class ScreenOutcome:
+    screened: int
+    good_fit: int
+    maybe: int
+    irrelevant: int
+    details: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class FetchOutcome:
+    inserted: int
+    skipped: int
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+def _profile_list(profile, attr, default=None):
+    """Decode a JSON-list column off the profile, guarding None/empty."""
+    raw = getattr(profile, attr, None) if profile else None
+    return json.loads(raw) if raw else (default or [])
+
+
+def load_base_cv(db: Session, user: User) -> dict | None:
+    """Return the user's structured base CV, or None if none is on file."""
+    cv = db.query(CV).filter(CV.userId == user.id).first()
+    if not cv or not cv.structuredData:
+        return None
+    return json.loads(cv.structuredData)
+
+
+def _build_profile_context(profile: Profile | None) -> str:
+    """The candidate-profile block injected into the generation prompt."""
+    if not profile:
+        return ""
+    languages = _profile_list(profile, "languages")
+    keywords = _profile_list(profile, "keywords")
+    lang_str = (
+        ", ".join(f"{lg['name']} ({lg['level']})" for lg in languages) if languages else ""
+    )
+    kw_str = ", ".join(keywords) if keywords else ""
+    return (
+        f"\nCANDIDATE PROFILE:\n"
+        f"- Years of experience: {profile.totalYearsExperience or 'unknown'}\n"
+        f"- Seniority: {profile.seniority or 'unknown'}\n"
+        f"- Current location: {profile.currentLocation or 'unknown'}\n"
+        f"- Preferred locations: {profile.preferredLocations or 'any'}\n"
+        f"- Notice period: {profile.noticePeriod or 'unknown'}"
+        + (f"\n- Languages: {lang_str}" if lang_str else "")
+        + (f"\n- Key skills/keywords to emphasize: {kw_str}" if kw_str else "")
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fetch: pull postings from LinkedIn and store the new ones.
+# ---------------------------------------------------------------------------
+def fetch(db: Session, user: User, date_posted: str) -> FetchOutcome:
+    positions = db.query(Position).filter(Position.userId == user.id).all()
+    if not positions:
+        raise IntakeError(
+            "No positions configured. Add some in the Positions tab first.", 400
+        )
+
+    profile = db.query(Profile).filter(Profile.userId == user.id).first()
+    country_codes = _profile_list(profile, "preferredLocations")
+    job_types = _profile_list(profile, "jobTypes", ["fulltime"])
+    position_labels = [p.label for p in positions]
+
+    normalize = job_extractor.normalize_job_url
+    existing_rows = db.query(Job.url).filter(Job.userId == user.id).all()
+    existing_urls = {normalize(r.url or "") for r in existing_rows}
+
+    fetched = apify.fetch_linkedin_jobs(
+        position_labels, country_codes, date_posted, job_types
+    )
+    new_jobs = [j for j in fetched if normalize(j.url or "") not in existing_urls]
+    for j in new_jobs:
+        norm = normalize(j.url or "")
+        existing_urls.add(norm)
+        db.add(
+            Job(
+                userId=user.id,
+                title=j.title,
+                company=j.company,
+                location=j.location,
+                description=j.description,
+                url=norm,
+                salary=j.salary,
+                jobType=j.job_type or j.seniority_level,
+                source="linkedin",
+                agentStatus="pending",
+                applicationStatus="new",
+                fetchedAt=datetime.utcnow(),
+            )
+        )
+
+    db.commit()
+    return FetchOutcome(inserted=len(new_jobs), skipped=len(fetched) - len(new_jobs))
+
+
+# ---------------------------------------------------------------------------
+# Screen: score fetched jobs for relevance and persist the verdict.
+# ---------------------------------------------------------------------------
+def screen(db: Session, user: User, ids: list[str] | None = None) -> ScreenOutcome:
+    query = db.query(Job).filter(Job.userId == user.id)
+    if ids:
+        query = query.filter(Job.id.in_(ids))
+    else:
+        query = query.filter(Job.relevanceStatus == "unscreened")
+
+    unscreened = query.with_entities(
+        Job.id, Job.title, Job.company, Job.description, Job.location
+    ).all()
+    positions = db.query(Position).filter(Position.userId == user.id).all()
+    profile = db.query(Profile).filter(Profile.userId == user.id).first()
+
+    if not unscreened:
+        return ScreenOutcome(0, 0, 0, 0)
+    if not positions:
+        raise IntakeError("No positions configured.", 400)
+
+    keywords = _profile_list(profile, "keywords")
+    languages = _profile_list(profile, "languages")
+    deal_breakers = _profile_list(profile, "dealBreakers")
+    preferred_locations = _profile_list(profile, "preferredLocations")
+
+    # Send full CV — cached via Anthropic prompt caching (90% cheaper on batches 2+)
+    user_cv = db.query(CV).filter(CV.userId == user.id).first()
+    base_cv = user_cv.structuredData if user_cv and user_cv.structuredData else ""
+
+    jobs_payload = [
+        {
+            "id": j.id,
+            "title": j.title,
+            "company": j.company,
+            "description": j.description,
+            "location": j.location,
+        }
+        for j in unscreened
+    ]
+    profile_payload = {
+        "seniority": profile.seniority if profile else "",
+        "totalYearsExperience": profile.totalYearsExperience if profile else None,
+        "keywords_list": keywords,
+        "languages_list": languages,
+        "narrative": profile.narrative if profile else "",
+        "deal_breakers": deal_breakers,
+        "preferred_locations": preferred_locations,
+    }
+
+    results = claude.screen_jobs(
+        jobs_payload, [p.label for p in positions], profile_payload, base_cv
+    )
+
+    by_fit: dict[str, list[str]] = {"good_fit": [], "maybe": [], "irrelevant": []}
+    for r in results:
+        fit = r.get("fit", "maybe")
+        by_fit.setdefault(fit, []).append(r["id"])
+
+        job_id = r.get("id")
+        if job_id:
+            update_fields = {"relevanceStatus": fit}
+            if "score" in r:
+                update_fields["screeningScore"] = str(r["score"])
+            if "reason" in r:
+                update_fields["screeningReason"] = r["reason"]
+            if "archetype" in r:
+                update_fields["archetype"] = r["archetype"]
+            db.query(Job).filter(Job.id == job_id, Job.userId == user.id).update(
+                update_fields, synchronize_session=False
+            )
+
+    db.commit()
+
+    return ScreenOutcome(
+        screened=len(results),
+        good_fit=len(by_fit["good_fit"]),
+        maybe=len(by_fit["maybe"]),
+        irrelevant=len(by_fit["irrelevant"]),
+        details=results,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Generate: tailor + score + fit + persist a CV/CL for each selected job.
+# ---------------------------------------------------------------------------
+def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
+    base_cv_data = load_base_cv(db, user)
+    if base_cv_data is None:
+        raise IntakeError("No CV found. Please upload your CV first.", 400)
+
+    profile = db.query(Profile).filter(Profile.userId == user.id).first()
+    profile_context = _build_profile_context(profile)
+    candidate_name = (profile.fullName if profile else None) or user.name or "Candidate"
+    linkedin_url = profile.linkedinUrl if profile else None
+    github_url = profile.githubUrl if profile else None
+    narrative = profile.narrative if profile else None
+    candidate_years = profile.totalYearsExperience if profile else None
+
+    results: list[Job] = []
+    for job_id in job_ids:
+        job = db.query(Job).filter(Job.id == job_id, Job.userId == user.id).first()
+        if not job:
+            continue
+
+        job.agentStatus = "generating"
+        db.commit()
+
+        # Status callback flips the job to "reviewing" once we start iterating
+        def _on_pass(pass_num, _score, _job=job):
+            if pass_num >= 2:
+                _job.agentStatus = "reviewing"
+                db.commit()
+
+        result = claude.tailor_cv_iterative(
+            base_cv=base_cv_data,
+            job_description=job.description or "",
+            job_title=job.title,
+            company=job.company,
+            profile_context=profile_context,
+            candidate_name=candidate_name,
+            linkedin_url=linkedin_url,
+            github_url=github_url,
+            archetype=job.archetype,
+            narrative=narrative,
+            candidate_years=candidate_years,
+            on_pass=_on_pass,
+        )
+
+        # Assemble final CV: generated sections + factual identity from the base
+        # CV (header + languages are copied, never tailored).
+        assembled = resume.merge_identity(result.resume, base_cv_data)
+
+        # Fit to one page NOW and store the fitted version. Views render the
+        # stored JSON verbatim, so any content trim must happen here.
+        _, assembled = pdf_generator.fit_and_render(
+            assembled, trim_callback=claude.trim_resume_for_fit
+        )
+
+        score = result.ats
+        # The scorer already decided; read that decision instead of re-deriving
+        # accept/reject from a threshold of the route's own.
+        job.agentStatus = (
+            "rejected" if score and score.decision == "REJECTED" else "done"
+        )
+        job.atsScore = result.ats_score
+        job.atsBreakdown = json.dumps(ats_scorer.to_api_dict(score)) if score else None
+        job.generatedCv = json.dumps(assembled)
+        job.generatedCl = result.cover_letter
+        job.generatedAt = datetime.utcnow()
+        db.commit()
+        db.refresh(job)
+        results.append(job)
+
+    return results

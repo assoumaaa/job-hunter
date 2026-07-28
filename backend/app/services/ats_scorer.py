@@ -34,9 +34,8 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional
 
-from . import claude as _claude
+from . import llm
 
 logger = logging.getLogger(__name__)
 
@@ -48,33 +47,55 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class JDAnalysis:
-    must_have_keywords: List[str] = field(default_factory=list)
-    nice_to_have_keywords: List[str] = field(default_factory=list)
-    required_years: Optional[int] = None
-    seniority: Optional[str] = None  # junior | mid | senior | lead | principal
-    hard_requirements: List[str] = field(default_factory=list)
+    must_have_keywords: list[str] = field(default_factory=list)
+    nice_to_have_keywords: list[str] = field(default_factory=list)
+    required_years: int | None = None
+    seniority: str | None = None  # junior | mid | senior | lead | principal
+    hard_requirements: list[str] = field(default_factory=list)
     role_summary: str = ""
 
 
 @dataclass
 class AtsScore:
     total: int
-    keyword: int          # 0-45
-    requirements: int     # 0-5
-    format: int           # 0-10
-    semantic: int         # 0-15
-    impact: int           # 0-15
-    recruiter: int        # 0-10
-    decision: str         # APPROVED | NEEDS_REVISION | REJECTED
-    missing_must_have: List[str] = field(default_factory=list)
-    missing_nice_to_have: List[str] = field(default_factory=list)
-    gaps: List[str] = field(default_factory=list)  # plain-language gaps for UI
-    notes: str = ""       # short evaluator note
+    keyword: int  # 0-45
+    requirements: int  # 0-5
+    format: int  # 0-10
+    semantic: int  # 0-15
+    impact: int  # 0-15
+    recruiter: int  # 0-10
+    decision: str  # APPROVED | NEEDS_REVISION | REJECTED
+    missing_must_have: list[str] = field(default_factory=list)
+    missing_nice_to_have: list[str] = field(default_factory=list)
+    gaps: list[str] = field(default_factory=list)  # plain-language gaps for UI
+    notes: str = ""  # short evaluator note
 
 
 # Thresholds
 APPROVE_THRESHOLD = 85
 REJECT_THRESHOLD = 60
+
+
+def to_api_dict(score: AtsScore) -> dict:
+    """Project a score onto the JSON shape the jobs API exposes.
+
+    The one place a score is flattened for storage/transport — it stays a whole
+    `AtsScore` everywhere upstream. Field names match the score's own
+    (`requirements`, `semantic`): no rename dance.
+    """
+    return {
+        "keyword": score.keyword,
+        "requirements": score.requirements,
+        "format": score.format,
+        "semantic": score.semantic,
+        "impact": score.impact,
+        "recruiter": score.recruiter,
+        "decision": score.decision,
+        "gaps": score.gaps,
+        "missing_must_have": score.missing_must_have,
+        "missing_nice_to_have": score.missing_nice_to_have,
+        "notes": score.notes,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +134,16 @@ def analyze_jd(job_description: str) -> JDAnalysis:
         return JDAnalysis()
 
     try:
-        resp = _claude.client.messages.create(
-            model=_claude.SCREENING_MODEL,
+        data = llm.complete_json(
+            model=llm.SCREENING_MODEL,
             max_tokens=1024,
             messages=[
-                {"role": "user", "content": _JD_ANALYZER_PROMPT + "\n\nJD:\n" + job_description},
+                {
+                    "role": "user",
+                    "content": _JD_ANALYZER_PROMPT + "\n\nJD:\n" + job_description,
+                },
             ],
         )
-        raw = resp.content[0].text if resp.content else ""
-        data = _claude._extract_json(raw)
     except Exception as e:
         logger.warning("JD analysis failed, falling back to empty: %s", e)
         return JDAnalysis()
@@ -134,8 +156,16 @@ def analyze_jd(job_description: str) -> JDAnalysis:
     return JDAnalysis(
         must_have_keywords=_strlist(data.get("must_have_keywords"))[:12],
         nice_to_have_keywords=_strlist(data.get("nice_to_have_keywords"))[:10],
-        required_years=data.get("required_years") if isinstance(data.get("required_years"), int) else None,
-        seniority=(data.get("seniority") or None) if isinstance(data.get("seniority"), str) else None,
+        required_years=(
+            data.get("required_years")
+            if isinstance(data.get("required_years"), int)
+            else None
+        ),
+        seniority=(
+            (data.get("seniority") or None)
+            if isinstance(data.get("seniority"), str)
+            else None
+        ),
         hard_requirements=_strlist(data.get("hard_requirements"))[:5],
         role_summary=str(data.get("role_summary") or "").strip(),
     )
@@ -148,7 +178,7 @@ def analyze_jd(job_description: str) -> JDAnalysis:
 
 def _resume_text(resume: dict) -> str:
     """Flatten the structured resume into a single searchable string."""
-    parts: List[str] = []
+    parts: list[str] = []
     parts.append(str(resume.get("summary") or ""))
     for exp in resume.get("experience") or []:
         parts.append(str(exp.get("title") or ""))
@@ -185,7 +215,12 @@ def _keyword_hit(keyword: str, haystack: str) -> bool:
     if not kw:
         return False
     # Generate variants
-    variants = {kw, kw.replace("-", " "), kw.replace(" ", "-"), kw.replace(" & ", " and ")}
+    variants = {
+        kw,
+        kw.replace("-", " "),
+        kw.replace(" ", "-"),
+        kw.replace(" & ", " and "),
+    }
     if kw.endswith("s"):
         variants.add(kw[:-1])
     else:
@@ -198,7 +233,7 @@ def _keyword_hit(keyword: str, haystack: str) -> bool:
     return False
 
 
-def _keyword_coverage(keywords: List[str], haystack: str) -> tuple[int, List[str]]:
+def _keyword_coverage(keywords: list[str], haystack: str) -> tuple[int, list[str]]:
     hits = sum(1 for k in keywords if _keyword_hit(k, haystack))
     missing = [k for k in keywords if not _keyword_hit(k, haystack)]
     return hits, missing
@@ -214,7 +249,7 @@ _METRIC_PATTERN = re.compile(
 
 
 def _metric_bullet_ratio(resume: dict) -> float:
-    bullets: List[str] = []
+    bullets: list[str] = []
     for exp in resume.get("experience") or []:
         bullets.extend(str(b) for b in (exp.get("bullets") or []))
     if not bullets:
@@ -223,9 +258,9 @@ def _metric_bullet_ratio(resume: dict) -> float:
     return with_metric / len(bullets)
 
 
-def _format_score(resume: dict) -> tuple[int, List[str]]:
+def _format_score(resume: dict) -> tuple[int, list[str]]:
     """0-10 pts for parseability — what real ATS parsers check."""
-    issues: List[str] = []
+    issues: list[str] = []
     score = 10
 
     header = resume.get("header") or {}
@@ -256,7 +291,7 @@ def _format_score(resume: dict) -> tuple[int, List[str]]:
     return max(0, score), issues
 
 
-def _requirements_score(jd: JDAnalysis, candidate_years: Optional[int]) -> int:
+def _requirements_score(jd: JDAnalysis, candidate_years: int | None) -> int:
     """0-5 pts for years/seniority alignment."""
     if jd.required_years is None or candidate_years is None:
         return 4  # benefit of the doubt
@@ -299,23 +334,27 @@ Rubric (be strict — most CVs are not great):
 No commentary outside the JSON. No fences."""
 
 
-def _llm_evaluate(resume: dict, jd_analysis: JDAnalysis, job_description: str) -> tuple[int, int, int, str]:
+def _llm_evaluate(
+    resume: dict, jd_analysis: JDAnalysis, job_description: str
+) -> tuple[int, int, int, str]:
     payload = (
-        "JOB DESCRIPTION:\n" + (job_description or "")[:3500]
-        + "\n\nROLE SUMMARY: " + jd_analysis.role_summary
-        + "\n\nMUST-HAVE KEYWORDS: " + ", ".join(jd_analysis.must_have_keywords)
-        + "\n\nCANDIDATE RESUME (JSON):\n" + json.dumps(resume, indent=2)[:6000]
+        "JOB DESCRIPTION:\n"
+        + (job_description or "")[:3500]
+        + "\n\nROLE SUMMARY: "
+        + jd_analysis.role_summary
+        + "\n\nMUST-HAVE KEYWORDS: "
+        + ", ".join(jd_analysis.must_have_keywords)
+        + "\n\nCANDIDATE RESUME (JSON):\n"
+        + json.dumps(resume, indent=2)[:6000]
     )
     try:
-        resp = _claude.client.messages.create(
-            model=_claude.SCREENING_MODEL,
+        data = llm.complete_json(
+            model=llm.SCREENING_MODEL,
             max_tokens=512,
             messages=[
                 {"role": "user", "content": _EVALUATOR_PROMPT + "\n\n" + payload},
             ],
         )
-        raw = resp.content[0].text if resp.content else ""
-        data = _claude._extract_json(raw)
     except Exception as e:
         logger.warning("LLM evaluator failed, defaulting to mid scores: %s", e)
         return 8, 8, 5, "Evaluator unavailable; defaults applied."
@@ -344,12 +383,16 @@ def score_resume(
     resume: dict,
     jd_analysis: JDAnalysis,
     job_description: str,
-    candidate_years: Optional[int] = None,
+    candidate_years: int | None = None,
 ) -> AtsScore:
     haystack = _normalize(_resume_text(resume))
 
-    must_hits, missing_must = _keyword_coverage(jd_analysis.must_have_keywords, haystack)
-    nice_hits, missing_nice = _keyword_coverage(jd_analysis.nice_to_have_keywords, haystack)
+    must_hits, missing_must = _keyword_coverage(
+        jd_analysis.must_have_keywords, haystack
+    )
+    nice_hits, missing_nice = _keyword_coverage(
+        jd_analysis.nice_to_have_keywords, haystack
+    )
 
     must_total = len(jd_analysis.must_have_keywords)
     nice_total = len(jd_analysis.nice_to_have_keywords)
@@ -360,7 +403,9 @@ def score_resume(
     req_score = _requirements_score(jd_analysis, candidate_years)
     fmt_score, fmt_issues = _format_score(resume)
 
-    semantic, impact, recruiter, notes = _llm_evaluate(resume, jd_analysis, job_description)
+    semantic, impact, recruiter, notes = _llm_evaluate(
+        resume, jd_analysis, job_description
+    )
 
     total = keyword_score + req_score + fmt_score + semantic + impact + recruiter
 
@@ -371,7 +416,7 @@ def score_resume(
     else:
         decision = "NEEDS_REVISION"
 
-    gaps: List[str] = []
+    gaps: list[str] = []
     if missing_must:
         gaps.append(f"Missing must-have keywords: {', '.join(missing_must[:6])}")
     if _metric_bullet_ratio(resume) < 0.4:
@@ -432,8 +477,8 @@ Rules:
 
 @dataclass
 class ReviewFeedback:
-    edits: List[dict] = field(default_factory=list)
-    priority_keywords: List[str] = field(default_factory=list)
+    edits: list[dict] = field(default_factory=list)
+    priority_keywords: list[str] = field(default_factory=list)
 
     def is_empty(self) -> bool:
         return not self.edits and not self.priority_keywords
@@ -462,21 +507,26 @@ def critique(
     score: AtsScore,
 ) -> ReviewFeedback:
     payload = (
-        "JOB DESCRIPTION:\n" + (job_description or "")[:3000]
-        + "\n\nMUST-HAVE KEYWORDS (priority): " + ", ".join(jd_analysis.must_have_keywords)
-        + "\n\nMISSING MUST-HAVE KEYWORDS: " + (", ".join(score.missing_must_have) or "none")
-        + "\n\nCURRENT SCORE: " + str(score.total) + "/100"
-        + "\nGAPS: " + "; ".join(score.gaps)
-        + "\n\nCURRENT RESUME (JSON):\n" + json.dumps(resume, indent=2)[:6000]
+        "JOB DESCRIPTION:\n"
+        + (job_description or "")[:3000]
+        + "\n\nMUST-HAVE KEYWORDS (priority): "
+        + ", ".join(jd_analysis.must_have_keywords)
+        + "\n\nMISSING MUST-HAVE KEYWORDS: "
+        + (", ".join(score.missing_must_have) or "none")
+        + "\n\nCURRENT SCORE: "
+        + str(score.total)
+        + "/100"
+        + "\nGAPS: "
+        + "; ".join(score.gaps)
+        + "\n\nCURRENT RESUME (JSON):\n"
+        + json.dumps(resume, indent=2)[:6000]
     )
     try:
-        resp = _claude.client.messages.create(
-            model=_claude.GENERATION_MODEL,
+        data = llm.complete_json(
+            model=llm.GENERATION_MODEL,
             max_tokens=1500,
             messages=[{"role": "user", "content": _REVIEWER_PROMPT + "\n\n" + payload}],
         )
-        raw = resp.content[0].text if resp.content else ""
-        data = _claude._extract_json(raw)
     except Exception as e:
         logger.warning("Reviewer failed, returning empty feedback: %s", e)
         return ReviewFeedback()

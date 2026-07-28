@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -9,29 +9,31 @@ class JobOut(BaseModel):
     userId: str
     title: str
     company: str
-    location: Optional[str] = None
-    description: Optional[str] = None
-    url: Optional[str] = None
-    salary: Optional[str] = None
-    jobType: Optional[str] = None
-    source: Optional[str] = None
-    fetchedAt: Optional[datetime] = None
+    location: str | None = None
+    description: str | None = None
+    url: str | None = None
+    salary: str | None = None
+    jobType: str | None = None
+    source: str | None = None
+    fetchedAt: datetime | None = None
     relevanceStatus: str
-    archetype: Optional[str] = None
-    screeningScore: Optional[str] = None
-    screeningReason: Optional[str] = None
+    archetype: str | None = None
+    screeningScore: str | None = None
+    screeningReason: str | None = None
     agentStatus: str
-    atsScore: Optional[int] = None
-    atsBreakdown: Optional[str] = None
+    atsScore: int | None = None
+    atsBreakdown: str | None = None
     applicationStatus: str
-    applicationDate: Optional[datetime] = None
-    generatedCv: Optional[str] = None
-    generatedCl: Optional[str] = None
-    generatedAt: Optional[datetime] = None
-    originalCv: Optional[str] = None
-    originalCl: Optional[str] = None
-    createdAt: Optional[datetime] = None
-    updatedAt: Optional[datetime] = None
+    applicationDate: datetime | None = None
+    generatedCv: str | None = None
+    generatedCl: str | None = None
+    generatedAt: datetime | None = None
+    originalCv: str | None = None
+    originalCl: str | None = None
+    chatCv: str | None = None
+    chatCl: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -41,36 +43,43 @@ class TweakRequest(BaseModel):
     prompt: str
 
 
+class ChatTurn(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
 class TweakResponse(BaseModel):
     target: str
-    generatedCv: Optional[str] = None
-    generatedCl: Optional[str] = None
+    message: str | None = None  # assistant's plain-English reply for this turn
+    generatedCv: str | None = None
+    generatedCl: str | None = None
     hasOriginal: bool = True
+    history: list[ChatTurn] | None = None  # full transcript for the target
 
 
 class JobUpdateRequest(BaseModel):
     id: str
-    relevanceStatus: Optional[str] = None
-    agentStatus: Optional[str] = None
-    applicationStatus: Optional[str] = None
-    applicationDate: Optional[datetime] = None
-    atsScore: Optional[int] = None
-    atsBreakdown: Optional[str] = None
-    generatedCv: Optional[str] = None
-    generatedCl: Optional[str] = None
-    generatedAt: Optional[datetime] = None
+    relevanceStatus: str | None = None
+    agentStatus: str | None = None
+    applicationStatus: str | None = None
+    applicationDate: datetime | None = None
+    atsScore: int | None = None
+    atsBreakdown: str | None = None
+    generatedCv: str | None = None
+    generatedCl: str | None = None
+    generatedAt: datetime | None = None
 
 
 class JobDeleteRequest(BaseModel):
-    ids: List[str]
+    ids: list[str]
 
 
 class GenerateRequest(BaseModel):
-    jobIds: List[str]
+    jobIds: list[str]
 
 
 class ScreenRequest(BaseModel):
-    ids: Optional[List[str]] = None
+    ids: list[str] | None = None
 
 
 class ScreenResult(BaseModel):
@@ -78,16 +87,16 @@ class ScreenResult(BaseModel):
     good_fit: int
     maybe: int
     irrelevant: int
-    details: Optional[List[Dict[str, Any]]] = None  # per-job score/reason/archetype
+    details: list[dict[str, Any]] | None = None
 
 
 class ManualJobRequest(BaseModel):
     title: str
     company: str
     description: str
-    url: Optional[str] = None
-    location: Optional[str] = None
-    source: Optional[str] = "manual"
+    url: str | None = None
+    location: str | None = None
+    source: str | None = "manual"
 
 
 class ExtractUrlRequest(BaseModel):
@@ -98,9 +107,9 @@ class ExtractedJobResponse(BaseModel):
     title: str
     company: str
     description: str
-    location: Optional[str] = None
-    url: Optional[str] = None
-    source: Optional[str] = None
+    location: str | None = None
+    url: str | None = None
+    source: str | None = None
 
 
 class SyncRequest(BaseModel):

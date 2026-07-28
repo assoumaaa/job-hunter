@@ -5,6 +5,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 
 from .core.db import Base, engine
+
+# Import all models so SQLAlchemy picks them up before create_all
+from .models import CV, Job, Position, Profile, User  # noqa: F401
 from .routes import (
     auth_router,
     cv_router,
@@ -14,22 +17,18 @@ from .routes import (
     profile_router,
 )
 
-# Import all models so SQLAlchemy picks them up before create_all
-from .models import User, Job, Position, Profile, CV  # noqa: F401
-
 
 def _ensure_jobs_tweak_columns() -> None:
-    """Idempotently add originalCv/originalCl columns on sqlite. create_all
-    doesn't ALTER existing tables, so we do it here once per startup."""
+    """Idempotently add tweak/chat columns on sqlite. create_all doesn't ALTER
+    existing tables, so we do it here once per startup."""
     inspector = inspect(engine)
     if "jobs" not in inspector.get_table_names():
         return
     existing = {col["name"] for col in inspector.get_columns("jobs")}
     with engine.begin() as conn:
-        if "originalCv" not in existing:
-            conn.execute(text('ALTER TABLE jobs ADD COLUMN "originalCv" TEXT'))
-        if "originalCl" not in existing:
-            conn.execute(text('ALTER TABLE jobs ADD COLUMN "originalCl" TEXT'))
+        for column in ("originalCv", "originalCl", "chatCv", "chatCl"):
+            if column not in existing:
+                conn.execute(text(f'ALTER TABLE jobs ADD COLUMN "{column}" TEXT'))
 
 
 @asynccontextmanager

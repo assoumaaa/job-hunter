@@ -8,16 +8,55 @@ WeasyPrint is pure Python — no Chromium, no browser startup, SaaS-friendly.
 from __future__ import annotations
 
 import html
-import math
+import logging
 import re
 from pathlib import Path
 
 import weasyprint
 
+from . import resume as _resume
+
+logger = logging.getLogger(__name__)
+
 # Paths
 _BACKEND_DIR = Path(__file__).resolve().parent.parent.parent
 _TEMPLATE_PATH = _BACKEND_DIR / "templates" / "cv-template.html"
 _FONTS_DIR = _BACKEND_DIR / "static" / "fonts"
+
+
+# ---------------------------------------------------------------------------
+# Rendering seam: the one place WeasyPrint is called. The fit loop counts pages
+# by rendering, so swapping this out (`use_renderer(FakeRenderer([...]))`) lets a
+# test exercise the whole fit/trim algorithm without WeasyPrint or the
+# font/template filesystem. The returned document only needs `.pages` (sized to
+# the page count) and `.write_pdf()`.
+# ---------------------------------------------------------------------------
+class WeasyPrintRenderer:
+    def render(self, html_content: str, css_strings: list[str], base_url: str):
+        stylesheets = [weasyprint.CSS(string=s) for s in css_strings]
+        return weasyprint.HTML(string=html_content, base_url=base_url).render(
+            stylesheets=stylesheets
+        )
+
+
+_renderer = WeasyPrintRenderer()
+
+
+def use_renderer(renderer) -> None:
+    """Install a page renderer (tests: `use_renderer(FakeRenderer([...]))`)."""
+    global _renderer
+    _renderer = renderer
+
+
+def reset_renderer() -> None:
+    """Restore the default WeasyPrint renderer."""
+    global _renderer
+    _renderer = WeasyPrintRenderer()
+
+
+def _render_doc(html_content: str, css_strings: list[str]):
+    """Render to a document via the active renderer (has .pages, .write_pdf())."""
+    return _renderer.render(html_content, css_strings, str(_BACKEND_DIR))
 
 
 def _esc(text: str) -> str:
@@ -134,15 +173,11 @@ def _build_languages_html(languages: list) -> str:
     return ", ".join(parts)
 
 
-def _build_competencies_html(competencies: list) -> str:
-    if not competencies:
-        return ""
-    items = "".join(f"<li>{_esc(c)}</li>" for c in competencies)
-    return f'<ul class="competencies-list">{items}</ul>'
-
-
 def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
     """Render structured CV data into the HTML template (LaTeX-matching style)."""
+    # Read through the canonical résumé shape so the renderer and the parser
+    # can never disagree about what a CV contains.
+    data = _resume.normalize(data)
     template = _TEMPLATE_PATH.read_text(encoding="utf-8")
 
     header = data.get("header", {})
@@ -165,7 +200,6 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
     is_en = lang.startswith("en")
     labels = {
         "summary": "Summary" if is_en else "Resumen",
-        "competencies": "Core Competencies" if is_en else "Competencias",
         "experience": "Experience" if is_en else "Experiencia",
         "projects": "Projects" if is_en else "Proyectos",
         "education": "Education" if is_en else "Formacion",
@@ -180,7 +214,6 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
         return f'<div class="section{brk}"><div class="section-title">{title}</div>{content}</div>'
 
     summary_html = _esc(data.get("summary", ""))
-    competencies_html = ""
     experience_html = _build_experience_html(data.get("experience", []))
     projects_html = _build_projects_html(data.get("projects", []))
     education_html = _build_education_html(data.get("education", []))
@@ -198,7 +231,8 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
         "{{HEADER_RIGHT}}": header_right,
         "{{BLOCK_SUMMARY}}": _section(labels["summary"], f'<div class="summary-text">{summary_html}</div>') if summary_html else "",
         "{{BLOCK_SKILLS}}": _section(labels["skills"], skills_html, avoid_break=True),
-        "{{BLOCK_COMPETENCIES}}": _section(labels["competencies"], competencies_html) if competencies_html else "",
+        # Competencies were removed from the résumé shape; clear the placeholder.
+        "{{BLOCK_COMPETENCIES}}": "",
         "{{BLOCK_EXPERIENCE}}": _section(labels["experience"], experience_html),
         "{{BLOCK_PROJECTS}}": _section(labels["projects"], projects_html, avoid_break=True),
         "{{BLOCK_EDUCATION}}": _section(labels["education"], education_html, avoid_break=True),
@@ -214,11 +248,6 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
     html_out = _normalize_for_ats(html_out)
 
     return html_out
-
-
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -275,19 +304,14 @@ _FIT_STEPS: list[tuple[str, str]] = [
 
 def _run_css_fit(
     data: dict, lang: str, page_format: str, page_size: str
-) -> tuple[bytes | None, "weasyprint.Document"]:
+) -> tuple[bytes | None, weasyprint.Document]:
     """Try all CSS tightening steps. Returns (pdf_bytes, last_doc) if a step
     produced a 1-page render; otherwise (None, last_doc) with the tightest doc."""
     html_content = render_html(data, lang, page_format)
     last_doc = None
     for step_idx, (margin, override_css) in enumerate(_FIT_STEPS):
         page_css = f"@page {{ size: {page_size}; margin: {margin}; }}"
-        css_list = [
-            weasyprint.CSS(string=page_css),
-            weasyprint.CSS(string=override_css),
-        ]
-        html_doc = weasyprint.HTML(string=html_content, base_url=str(_BACKEND_DIR))
-        doc = html_doc.render(stylesheets=css_list)
+        doc = _render_doc(html_content, [page_css, override_css])
         last_doc = doc
 
         if len(doc.pages) == 1:
@@ -298,14 +322,18 @@ def _run_css_fit(
     return None, last_doc
 
 
-def generate_pdf(
+def fit_and_render(
     data: dict,
     lang: str = "en",
     page_format: str = "a4",
-    trim_callback: "callable | None" = None,
+    trim_callback: callable | None = None,
     max_trims: int = 2,
-) -> bytes:
+) -> tuple[bytes, dict]:
     """Generate a one-page PDF from structured CV data.
+
+    Returns (pdf_bytes, final_data) where final_data reflects any content
+    trims — callers that store the CV must persist final_data so what the
+    user sees in the editor matches every future render.
 
     Strategy:
       1. CSS auto-fit (8 tightening steps). Free, no model calls.
@@ -318,14 +346,14 @@ def generate_pdf(
 
     pdf_bytes, last_doc = _run_css_fit(data, lang, page_format, page_size)
     if pdf_bytes is not None:
-        return pdf_bytes
+        return pdf_bytes, data
 
     if trim_callback is None:
         logger.warning(
             "CV overflows at tightest CSS step (%d pages); no trim_callback provided.",
             len(last_doc.pages) if last_doc else 0,
         )
-        return last_doc.write_pdf()
+        return last_doc.write_pdf(), data
 
     current_data = data
     for attempt in range(max_trims):
@@ -351,13 +379,13 @@ def generate_pdf(
         pdf_bytes, last_doc = _run_css_fit(current_data, lang, page_format, page_size)
         if pdf_bytes is not None:
             logger.info("CV fit via content trim (attempt %d)", attempt + 1)
-            return pdf_bytes
+            return pdf_bytes, current_data
 
     logger.warning(
         "CV still overflows after %d trim attempts; returning best-effort %d-page PDF.",
         max_trims, len(last_doc.pages) if last_doc else 0,
     )
-    return last_doc.write_pdf()
+    return last_doc.write_pdf(), current_data
 
 
 def generate_cover_letter_pdf(
@@ -418,73 +446,6 @@ p {{ margin-bottom:11pt; }}
     else:
         page_css = "@page { size: A4; margin: 0.9in 1.1in; }"
 
-    css = weasyprint.CSS(string=page_css)
-    html_doc = weasyprint.HTML(string=html_content, base_url=str(_BACKEND_DIR))
-    return html_doc.write_pdf(stylesheets=[css])
+    return _render_doc(html_content, [page_css]).write_pdf()
 
 
-# ---------------------------------------------------------------------------
-# Page estimation (empirically calibrated for A4, 9.5pt CMU Serif, 0.45in margins)
-# ---------------------------------------------------------------------------
-_CHARS_PER_LINE = 116   # max chars in a bullet line before wrapping
-_WRAP_COST = 0.87       # a wrapped continuation line costs 0.87 line-units (vs 1.0 for a new bullet)
-_PAGE_CAPACITY = 47     # total line-units that fit on one A4 page
-
-
-def estimate_cv_pages(data: dict) -> dict:
-    """Estimate how many pages a CV will consume without rendering it.
-
-    Returns dict with: used, capacity, pages, percent, fits_one_page
-    """
-    used = 0.0
-
-    if data.get("summary"):
-        summary_lines = math.ceil(len(data["summary"]) / 140)  # summary is wider (no bullet indent)
-        used += 2 + summary_lines
-
-    skills = data.get("skills", [])
-    if skills:
-        used += 2
-        for s in skills:
-            line = f"{s.get('category', '')}: {', '.join(s.get('items', []))}"
-            n = math.ceil(len(line) / _CHARS_PER_LINE)
-            used += 1 + (n - 1) * _WRAP_COST
-
-    education = data.get("education", [])
-    if education:
-        used += 2 + len(education)
-
-    if data.get("languages"):
-        used += 1
-
-    certs = data.get("certifications", [])
-    if certs:
-        used += 2 + len(certs)
-
-    projects = data.get("projects", [])
-    if projects:
-        used += 2
-        for p in projects:
-            desc_lines = math.ceil(len(p.get("description", "")) / _CHARS_PER_LINE)
-            used += 1 + max(desc_lines, 1)
-
-    jobs = data.get("experience", [])
-    if jobs:
-        used += 1
-        for job in jobs:
-            used += 2
-            for bullet in job.get("bullets", []):
-                n = math.ceil(len(bullet) / _CHARS_PER_LINE)
-                used += 1 + (n - 1) * _WRAP_COST
-
-    used = round(used, 1)
-    pages = math.ceil(used / _PAGE_CAPACITY)
-    percent = round(used / _PAGE_CAPACITY * 100)
-
-    return {
-        "used": used,
-        "capacity": _PAGE_CAPACITY,
-        "pages": max(pages, 1),
-        "percent": percent,
-        "fits_one_page": used <= _PAGE_CAPACITY,
-    }

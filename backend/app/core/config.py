@@ -17,5 +17,9 @@ class Settings(BaseSettings):
     APIFY_TOKEN: str = ""
     LATEX_SERVICE_URL: str = "http://localhost:3001"
 
+    # Model tiers: Haiku for cheap bulk work, Sonnet for quality generation.
+    LLM_SCREENING_MODEL: str = "claude-haiku-4-5-20251001"
+    LLM_GENERATION_MODEL: str = "claude-sonnet-4-6"
+
 
 settings = Settings()

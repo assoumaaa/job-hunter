@@ -18,12 +18,11 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import urlparse
 
 import httpx
 
-from . import claude
+from . import llm
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +40,9 @@ class ExtractedJob:
     title: str
     company: str
     description: str
-    location: Optional[str] = None
+    location: str | None = None
     source: str = "manual"
-    url: Optional[str] = None
+    url: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +52,7 @@ class ExtractedJob:
 _LINKEDIN_JOB_ID = re.compile(r"/jobs(?:/view)?/(?:[^/]*-)?(\d{6,})")
 
 
-def _linkedin_job_id(url: str) -> Optional[str]:
+def _linkedin_job_id(url: str) -> str | None:
     """Pull the numeric job id out of any LinkedIn job URL variant."""
     parsed = urlparse(url)
     if "linkedin.com" not in parsed.netloc:
@@ -166,13 +165,11 @@ RAW TEXT:
 
 
 def _extract_with_claude(text: str) -> dict:
-    resp = claude.client.messages.create(
-        model=claude.SCREENING_MODEL,
+    return llm.complete_json(
+        model=llm.SCREENING_MODEL,
         max_tokens=2048,
         messages=[{"role": "user", "content": EXTRACT_PROMPT + text}],
     )
-    raw = resp.content[0].text if resp.content else ""
-    return claude._extract_json(raw)
 
 
 # ---------------------------------------------------------------------------

@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import base64
 import uuid
-from typing import Optional
 
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import jwt, JWTError
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -15,7 +14,7 @@ from .db import get_db
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
-_jwks_cache: Optional[dict] = None
+_jwks_cache: dict | None = None
 
 
 def _get_clerk_jwks() -> dict:
@@ -48,7 +47,7 @@ def _verify_clerk_token(token: str) -> dict:
 
 
 def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ):
     from ..models.user import User
