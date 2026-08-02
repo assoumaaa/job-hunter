@@ -59,4 +59,6 @@ ENV FRONTEND_DIST=/app/frontend_build
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Bind the platform's injected $PORT (Railway/Render set it), falling back to
+# 8000 for local `docker run` and docker-compose.
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
