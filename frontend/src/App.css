@@ -1,68 +1,250 @@
 @import "tailwindcss";
 
+/* ────────────────────────────────────────────────────────────────────────────
+   Kestrel design tokens.
+   Raw values live on :root as --k-* / --st-* custom properties and flip with
+   [data-theme="dark"] (set before first paint by the inline script in
+   index.html). Tailwind utilities are generated from them via @theme inline,
+   so components use semantic utilities (bg-surface, text-ink, border-line)
+   and never need dark: variants. JS consumers (ag-grid, Clerk) read the same
+   variables through services/theme.js readToken().
+   Full guideline: docs/brand.md
+   ──────────────────────────────────────────────────────────────────────────── */
+
+@theme inline {
+	--font-sans: "Geist", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	--font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+	--color-canvas: var(--k-canvas);
+	--color-surface: var(--k-surface);
+	--color-raised: var(--k-raised);
+	--color-muted: var(--k-muted);
+	--color-line: var(--k-line);
+	--color-line-strong: var(--k-line-strong);
+	--color-ink: var(--k-ink);
+	--color-ink-2: var(--k-ink-2);
+	--color-ink-3: var(--k-ink-3);
+	--color-accent: var(--k-accent);
+	--color-accent-solid: var(--k-accent-solid);
+	--color-accent-solid-hover: var(--k-accent-solid-hover);
+	--color-accent-soft: var(--k-accent-soft);
+	--color-accent-text: var(--k-accent-text);
+	--color-hovertint: var(--k-hover);
+	--color-toast: var(--k-toast-bg);
+	--color-toast-fg: var(--k-toast-fg);
+
+	--color-st-neutral: var(--st-neutral-bg);
+	--color-st-neutral-fg: var(--st-neutral-fg);
+	--color-st-ok: var(--st-ok-bg);
+	--color-st-ok-fg: var(--st-ok-fg);
+	--color-st-warn: var(--st-warn-bg);
+	--color-st-warn-fg: var(--st-warn-fg);
+	--color-st-bad: var(--st-bad-bg);
+	--color-st-bad-fg: var(--st-bad-fg);
+	--color-st-info: var(--st-info-bg);
+	--color-st-info-fg: var(--st-info-fg);
+
+	--shadow-raised: var(--k-shadow-raised);
+	--shadow-overlay: var(--k-shadow-overlay);
+	--shadow-modal: var(--k-shadow-modal);
+
+	/* Type scale: micro 11, label 12.5, body 13.5, title 16, display 20, stat 26 */
+	--text-micro: 11px;
+	--text-micro--line-height: 14px;
+	--text-label: 12.5px;
+	--text-label--line-height: 18px;
+	--text-body: 13.5px;
+	--text-body--line-height: 20px;
+	--text-title: 16px;
+	--text-title--line-height: 24px;
+	--text-display: 20px;
+	--text-display--line-height: 28px;
+	--text-stat: 26px;
+	--text-stat--line-height: 32px;
+}
+
+:root {
+	color-scheme: light;
+
+	--k-canvas: #fafafa;
+	--k-surface: #ffffff;
+	--k-raised: #ffffff;
+	--k-muted: #f4f4f5;
+	--k-line: #e4e4e7;
+	--k-line-strong: #d4d4d8;
+	--k-ink: #18181b;
+	--k-ink-2: #52525b;
+	--k-ink-3: #a1a1aa;
+	--k-accent: #2563eb;
+	--k-accent-solid: #2563eb;
+	--k-accent-solid-hover: #1d4ed8;
+	--k-accent-soft: #eff6ff;
+	--k-accent-text: #1d4ed8;
+	--k-hover: rgba(24, 24, 27, 0.04);
+	--k-toast-bg: rgba(24, 24, 27, 0.95);
+	--k-toast-fg: #fafafa;
+
+	--st-neutral-bg: #f4f4f5;
+	--st-neutral-fg: #52525b;
+	--st-neutral-solid: #e4e4e7;
+	--st-ok-bg: #d1fae5;
+	--st-ok-fg: #065f46;
+	--st-ok-solid: #10b981;
+	--st-warn-bg: #fef3c7;
+	--st-warn-fg: #92400e;
+	--st-warn-solid: #f59e0b;
+	--st-bad-bg: #fee2e2;
+	--st-bad-fg: #b91c1c;
+	--st-bad-solid: #ef4444;
+	--st-info-bg: #dbeafe;
+	--st-info-fg: #1d4ed8;
+	--st-info-solid: #3b82f6;
+
+	--k-shadow-raised: 0 1px 2px rgba(24, 24, 27, 0.05);
+	--k-shadow-overlay: 0 4px 16px rgba(24, 24, 27, 0.1);
+	--k-shadow-modal: 0 16px 48px rgba(24, 24, 27, 0.16);
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+
+	--k-canvas: #09090b;
+	--k-surface: #18181b;
+	--k-raised: #1c1c1f;
+	--k-muted: rgba(250, 250, 250, 0.07);
+	--k-line: #27272a;
+	--k-line-strong: #3f3f46;
+	--k-ink: #fafafa;
+	--k-ink-2: #a1a1aa;
+	--k-ink-3: #71717a;
+	--k-accent: #3b82f6;
+	--k-accent-soft: rgba(59, 130, 246, 0.14);
+	--k-accent-text: #93c5fd;
+	--k-hover: rgba(250, 250, 250, 0.05);
+	--k-toast-bg: #1c1c1f;
+	--k-toast-fg: #fafafa;
+
+	--st-neutral-bg: rgba(250, 250, 250, 0.07);
+	--st-neutral-fg: #a1a1aa;
+	--st-neutral-solid: #3f3f46;
+	--st-ok-bg: rgba(5, 150, 105, 0.16);
+	--st-ok-fg: #6ee7b7;
+	--st-warn-bg: rgba(217, 119, 6, 0.16);
+	--st-warn-fg: #fbbf24;
+	--st-bad-bg: rgba(220, 38, 38, 0.16);
+	--st-bad-fg: #fca5a5;
+	--st-info-bg: rgba(59, 130, 246, 0.16);
+	--st-info-fg: #93c5fd;
+
+	--k-shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--k-shadow-overlay: 0 4px 16px rgba(0, 0, 0, 0.5);
+	--k-shadow-modal: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+@font-face {
+	font-family: "Geist";
+	src: url("/fonts/geist.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+}
+
+@font-face {
+	font-family: "Geist Mono";
+	src: url("/fonts/geist-mono.woff2") format("woff2");
+	font-weight: 100 900;
+	font-style: normal;
+	font-display: swap;
+}
+
 @layer base {
 	* {
 		box-sizing: border-box;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 	}
-	html, body {
+	html,
+	body {
 		margin: 0;
 		padding: 0;
-		font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-		background: #fafafa;
-		color: #09090b;
+		font-family: var(--font-sans);
+		background: var(--k-canvas);
+		color: var(--k-ink);
 	}
-	button { font-family: inherit; }
-	input, select, textarea { font-family: inherit; }
-	a { color: inherit; text-decoration: none; }
-	::selection { background: rgba(79, 70, 229, 0.18); }
+	button {
+		font-family: inherit;
+	}
+	input,
+	select,
+	textarea {
+		font-family: inherit;
+	}
+	a {
+		color: inherit;
+		text-decoration: none;
+	}
+	::selection {
+		background: var(--k-accent-soft);
+	}
 
 	/* Subtle scrollbars */
-	*::-webkit-scrollbar { width: 10px; height: 10px; }
-	*::-webkit-scrollbar-track { background: transparent; }
+	*::-webkit-scrollbar {
+		width: 10px;
+		height: 10px;
+	}
+	*::-webkit-scrollbar-track {
+		background: transparent;
+	}
 	*::-webkit-scrollbar-thumb {
-		background: #e4e4e7;
+		background: var(--k-line);
 		border: 2px solid transparent;
 		background-clip: padding-box;
 		border-radius: 999px;
 	}
 	*::-webkit-scrollbar-thumb:hover {
-		background: #d4d4d8;
+		background: var(--k-line-strong);
 		border: 2px solid transparent;
 		background-clip: padding-box;
 	}
 }
 
-/* AG Grid utility classes (Tailwind doesn't generate these since they're in dynamic strings) */
-.bg-zinc-100 { background-color: #f4f4f5; }
-.bg-green-100 { background-color: #dcfce7; }
-.bg-yellow-100 { background-color: #fef9c3; }
-.bg-red-100 { background-color: #fee2e2; }
-.bg-blue-100 { background-color: #dbeafe; }
-.bg-purple-100 { background-color: #f3e8ff; }
-.text-zinc-400 { color: #a1a1aa; }
-.text-zinc-600 { color: #52525b; }
-.text-green-700 { color: #15803d; }
-.text-yellow-700 { color: #a16207; }
-.text-red-600 { color: #dc2626; }
-.text-red-700 { color: #b91c1c; }
-.text-blue-700 { color: #1d4ed8; }
-.text-purple-700 { color: #7e22ce; }
-.opacity-50 { opacity: 0.5; }
+/* Motion is opt-in: everything below collapses to static under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+	@keyframes pulse {
+		0%,
+		100% {
+			opacity: 1;
+			transform: scale(1);
+		}
+		50% {
+			opacity: 0.4;
+			transform: scale(0.75);
+		}
+	}
 
-@keyframes pulse {
-	0%, 100% { opacity: 1; transform: scale(1); }
-	50% { opacity: 0.4; transform: scale(0.75); }
+	@keyframes shimmer {
+		0% {
+			background-position: -200% 0;
+		}
+		100% {
+			background-position: 200% 0;
+		}
+	}
+
+	.animate-shimmer {
+		background: linear-gradient(90deg, var(--k-muted) 0%, var(--k-canvas) 50%, var(--k-muted) 100%);
+		background-size: 200% 100%;
+		animation: shimmer 1.6s linear infinite;
+	}
+
+	.pulse-dot {
+		animation: pulse 1.2s ease-in-out infinite;
+	}
 }
 
-@keyframes shimmer {
-	0% { background-position: -200% 0; }
-	100% { background-position: 200% 0; }
-}
-
-.animate-shimmer {
-	background: linear-gradient(90deg, #f4f4f5 0%, #fafafa 50%, #f4f4f5 100%);
-	background-size: 200% 100%;
-	animation: shimmer 1.6s linear infinite;
+/* Static fallback so shimmer placeholders stay visible without motion. */
+@media (prefers-reduced-motion: reduce) {
+	.animate-shimmer {
+		background: var(--k-muted);
+	}
 }
