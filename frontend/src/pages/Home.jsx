@@ -11,9 +11,15 @@ import Settings from "./Settings";
 
 export default function Home() {
 	return (
-		<div className="flex h-screen overflow-hidden bg-zinc-50">
+		<div className="flex h-screen overflow-hidden bg-canvas">
+			<a
+				href="#main"
+				className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-lg focus:bg-accent-solid focus:px-3 focus:py-2 focus:text-label focus:font-medium focus:text-white"
+			>
+				Skip to content
+			</a>
 			<MainMenu />
-			<main className="flex-1 flex flex-col overflow-hidden min-w-0">
+			<main id="main" className="flex-1 flex flex-col overflow-hidden min-w-0">
 				<Routes>
 					<Route index element={<Navigate to="/home" replace />} />
 					<Route path="/home" element={<Dashboard />} />
