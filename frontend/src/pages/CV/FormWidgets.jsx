@@ -66,8 +66,16 @@ export const AutoTextarea = forwardRef(function AutoTextarea(
 	);
 });
 
-export function Section({ id, title, hint, icon: Icon, children, defaultOpen = true }) {
+export function Section({ id, title, hint, icon: Icon, children, defaultOpen = true, bare = false }) {
 	const [open, setOpen] = useState(defaultOpen);
+	// `bare`: no header/chevron — used when the tab already names the section.
+	if (bare) {
+		return (
+			<div className="bg-white border border-zinc-200/80 rounded-xl p-4 space-y-3 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+				{children}
+			</div>
+		);
+	}
 	return (
 		<div className="scroll-mt-4 bg-white border border-zinc-200/80 rounded-xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
 			<button

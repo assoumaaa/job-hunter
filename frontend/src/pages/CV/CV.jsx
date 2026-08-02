@@ -155,7 +155,10 @@ export default function CV() {
 			/>
 
 			{/* Section tabs */}
-			<div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-100 px-4 sm:px-6">
+			<div
+				className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-100 px-4 sm:px-6 [&::-webkit-scrollbar]:hidden"
+				style={{ scrollbarWidth: "none" }}
+			>
 				{sections.map((s) => {
 					const Icon = s.icon;
 					const active = activeSection === s.id;

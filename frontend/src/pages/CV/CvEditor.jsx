@@ -17,7 +17,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 
 	const sections = {
 		contact: (
-			<Section icon={User} title="Contact information">
+			<Section bare icon={User} title="Contact information">
 				<div className="grid grid-cols-2 gap-3">
 					<Field label="Full name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="John Doe" />
 					<Field label="Email" value={cv.header.email} onChange={(v) => updateHeader("email", v)} placeholder="john@example.com" />
@@ -30,7 +30,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		summary: (
-			<Section icon={FileText} title="Professional summary">
+			<Section bare icon={FileText} title="Professional summary">
 				<AutoTextarea
 					value={cv.summary}
 					onChange={(e) => setCv((p) => ({ ...p, summary: e.target.value }))}
@@ -40,13 +40,13 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		competencies: (
-			<Section icon={Sparkles} title="Core competencies">
+			<Section bare icon={Sparkles} title="Core competencies">
 				<TagEditor tags={cv.competencies} onChange={(v) => setList("competencies", v)} placeholder="e.g. Distributed Systems" />
 			</Section>
 		),
 		experience: <ExperienceSection experience={cv.experience} onChange={(list) => setList("experience", list)} />,
 		projects: (
-			<Section icon={FolderGit2} title="Projects" hint={`${cv.projects.length} entries`}>
+			<Section bare icon={FolderGit2} title="Projects" hint={`${cv.projects.length} entries`}>
 				{cv.projects.map((proj, i) => (
 					<ListItem key={i} onRemove={() => removeItem("projects", i)}>
 						<div className="grid grid-cols-2 gap-2.5">
@@ -63,7 +63,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		education: (
-			<Section icon={GraduationCap} title="Education" hint={`${cv.education.length} entries`}>
+			<Section bare icon={GraduationCap} title="Education" hint={`${cv.education.length} entries`}>
 				{cv.education.map((edu, i) => (
 					<ListItem key={i} onRemove={() => removeItem("education", i)}>
 						<div className="grid grid-cols-2 gap-2.5">
@@ -80,7 +80,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		certifications: (
-			<Section icon={Award} title="Certifications" hint={`${cv.certifications.length} entries`}>
+			<Section bare icon={Award} title="Certifications" hint={`${cv.certifications.length} entries`}>
 				{cv.certifications.map((cert, i) => (
 					<ListItem key={i} onRemove={() => removeItem("certifications", i)}>
 						<div className="grid grid-cols-3 gap-2.5">
@@ -96,7 +96,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		skills: (
-			<Section icon={Wrench} title="Skills" hint={`${cv.skills.length} categories`}>
+			<Section bare icon={Wrench} title="Skills" hint={`${cv.skills.length} categories`}>
 				{cv.skills.map((skill, i) => (
 					<ListItem key={i} onRemove={() => removeItem("skills", i)}>
 						<Field label="Category" value={skill.category} onChange={(v) => updateItem("skills", i, { category: v })} placeholder="Languages, Frameworks, Tools…" />
@@ -109,7 +109,7 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 			</Section>
 		),
 		languages: (
-			<Section icon={Languages} title="Languages" hint={`${cv.languages.length} entries`}>
+			<Section bare icon={Languages} title="Languages" hint={`${cv.languages.length} entries`}>
 				{cv.languages.map((lang, i) => (
 					<ListItem key={i} onRemove={() => removeItem("languages", i)}>
 						<div className="grid grid-cols-2 gap-2.5">

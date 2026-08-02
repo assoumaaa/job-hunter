@@ -49,12 +49,8 @@ export default function ExperienceSection({ experience, onChange }) {
 		onChange([...experience, { company: "", title: "", period: "", location: "", bullets: [newBullet()] }]);
 
 	return (
-		<Section
-			id="experience"
-			icon={Briefcase}
-			title="Work experience"
-			hint={`${experience.length} ${experience.length === 1 ? "entry" : "entries"}`}
-		>
+		<Section bare id="experience" icon={Briefcase} title="Work experience">
+
 			{experience.length === 0 && (
 				<p className="text-[12px] text-zinc-400 py-1">No roles yet — add your first position below.</p>
 			)}
