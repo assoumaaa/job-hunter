@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Save } from "lucide-react";
 
 import { Button } from "components/ui/button";
+import { FormSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { Select } from "components/ui/select";
@@ -58,6 +59,7 @@ export default function Settings() {
 	});
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [firstLoad, setFirstLoad] = useState(true);
 
 	const [callApi] = useCallApi();
 
@@ -76,7 +78,13 @@ export default function Settings() {
 	};
 
 	useEffect(() => {
-		callApi("/settings", { onSuccess: load });
+		callApi("/settings", {
+			onSuccess: (d) => {
+				load(d);
+				setFirstLoad(false);
+			},
+			onError: () => setFirstLoad(false),
+		});
 	}, []);
 
 	const save = async () => {
@@ -112,6 +120,10 @@ export default function Settings() {
 
 			<div className="flex-1 overflow-y-auto">
 				<div className="max-w-[760px] mx-auto px-8 py-8 flex flex-col gap-6">
+					{firstLoad ? (
+						<FormSkeleton fields={4} />
+					) : (
+					<>
 					<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] divide-y divide-zinc-100">
 						<div className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
 							API keys
@@ -166,6 +178,8 @@ export default function Settings() {
 						Keys are encrypted before they're stored and are never shown again in full. Leave a key field
 						blank to keep the one already saved.
 					</p>
+					</>
+					)}
 				</div>
 			</div>
 		</div>

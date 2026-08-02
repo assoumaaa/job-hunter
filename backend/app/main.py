@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
@@ -76,6 +77,9 @@ def _mount_frontend(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Job Hunter API", version="1.0.0", lifespan=lifespan)
+
+    # gzip JSON responses (the jobs list compresses ~10x).
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     app.add_middleware(
         CORSMiddleware,

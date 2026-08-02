@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Plus, Save, X } from "lucide-react";
 
 import { Button } from "components/ui/button";
+import { CardSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { useCallApi } from "services";
@@ -48,6 +49,7 @@ export default function Positions() {
 	const [keywordInput, setKeywordInput] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [firstLoad, setFirstLoad] = useState(true);
 
 	const kwRef = useRef(null);
 	const [callApi] = useCallApi();
@@ -82,7 +84,13 @@ export default function Positions() {
 	};
 
 	useEffect(() => {
-		callApi("/positions", { onSuccess: setPositions });
+		callApi("/positions", {
+			onSuccess: (data) => {
+				setPositions(data);
+				setFirstLoad(false);
+			},
+			onError: () => setFirstLoad(false),
+		});
 		callApi("/job-settings", {
 			onSuccess: (d) => {
 				setSelectedCountries(d.preferredLocations ? JSON.parse(d.preferredLocations) : []);
@@ -124,6 +132,10 @@ export default function Positions() {
 			<div className="flex-1 overflow-y-auto">
 				<div className="max-w-[860px] mx-auto px-8 py-8 flex flex-col gap-5">
 
+					{firstLoad ? (
+						<CardSkeleton count={4} />
+					) : (
+					<>
 					<SectionCard title="Job titles" description="Roles we'll search for on every sync">
 						{positions.length > 0 && (
 							<div className="flex flex-wrap gap-1.5 mb-3">
@@ -238,6 +250,8 @@ export default function Positions() {
 							<Button variant="outline" onClick={() => addKeyword(keywordInput)}>Add</Button>
 						</div>
 					</SectionCard>
+					</>
+					)}
 				</div>
 			</div>
 		</div>

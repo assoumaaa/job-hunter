@@ -3,7 +3,6 @@ import { Bolt as BoltIcon, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, Searc
 import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_META, RELEVANCE_OPTIONS } from "./StatusChip";
 import { useCallApi, useLoading } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import AddJobDialog from "./AddJobDialog";
 import { AgGridReact } from "ag-grid-react";
@@ -15,6 +14,8 @@ import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { PortalMenu } from "components/ui/portal-menu";
 import { Select } from "components/ui/select";
+import { TableSkeleton } from "components/ui/skeleton";
+import { useNavigate } from "react-router-dom";
 import { useSnackbar } from "notistack";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -42,6 +43,9 @@ const FETCH_RANGES = [
 ];
 
 const PULSE_STYLE = { animation: "pulse 1.2s ease-in-out infinite" };
+
+// In-session cache so revisiting Jobs renders instantly, then revalidates.
+let jobsCache = null;
 
 function SourceIcon({ source, className = "" }) {
 	if (source === "linkedin") {
@@ -150,7 +154,8 @@ function AppliedDateCell({ value, onChange }) {
 }
 
 export default function Jobs() {
-	const [jobs, setJobs] = useState([]);
+	const [jobs, setJobs] = useState(() => jobsCache ?? []);
+	const [firstLoad, setFirstLoad] = useState(() => !jobsCache);
 	const [contact, setContact] = useState(null);
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
@@ -192,8 +197,19 @@ export default function Jobs() {
 
 	const unscreenedCount = useMemo(() => jobs.filter((j) => j.relevanceStatus === "unscreened").length, [jobs]);
 
+	useEffect(() => {
+		jobsCache = jobs;
+	}, [jobs]);
+
 	const fetchJobs = useCallback(() => {
-		callApi("/jobs", { error: "Failed to load jobs", onSuccess: setJobs });
+		callApi("/jobs", {
+			error: "Failed to load jobs",
+			onSuccess: (data) => {
+				setJobs(data);
+				setFirstLoad(false);
+			},
+			onError: () => setFirstLoad(false),
+		});
 	}, [callApi]);
 
 	const patchJob = useCallback(
@@ -212,8 +228,6 @@ export default function Jobs() {
 		[callApi],
 	);
 
-	// Optimistic "screen these ids" flow shared by the toolbar Screen button and
-	// the auto-screen-on-add path. prefix/variant/error differ per caller.
 	const screenJobs = useCallback(
 		(ids, { variant = "success", prefix = () => "", error = "Failed to screen jobs" } = {}) => {
 			if (!ids.length) return;
@@ -315,7 +329,7 @@ export default function Jobs() {
 				headerName: "Docs",
 				width: 130,
 				cellRenderer: ({ data }) => {
-					const hasDocs = data.generatedCv || data.generatedCl;
+					const hasDocs = data.hasGeneratedCv || data.hasGeneratedCl;
 					const isGenerating = data.agentStatus === "generating";
 
 					if (data.agentStatus === "pending" && !hasDocs) {
@@ -330,8 +344,8 @@ export default function Jobs() {
 									style={{ animation: "pulse 1.2s ease-in-out infinite" }}
 								/>
 							)}
-							<DocChip value={data.generatedCv} label="CV" contact={contact} />
-							<DocChip value={data.generatedCl} label="CL" contact={contact} />
+							<DocChip jobId={data.id} label="CV" ready={data.hasGeneratedCv} contact={contact} />
+							<DocChip jobId={data.id} label="CL" ready={data.hasGeneratedCl} contact={contact} />
 						</div>
 					);
 				},
@@ -355,7 +369,7 @@ export default function Jobs() {
 			width: 56,
 			sortable: false,
 			cellRenderer: ({ data }) => {
-				if (!data.generatedCv && !data.generatedCl) return null;
+				if (!data.hasGeneratedCv && !data.hasGeneratedCl) return null;
 				return (
 					<button
 						onClick={() => navigate(`/jobs/${data.id}/tweak`)}
@@ -441,7 +455,16 @@ export default function Jobs() {
 					error: "Failed to generate documents",
 					onSuccess: (updatedJobs) => {
 						setJobs((prev) => {
-							const updatedMap = Object.fromEntries(updatedJobs.map((j) => [j.id, j]));
+							const updatedMap = Object.fromEntries(
+								updatedJobs.map((j) => [
+									j.id,
+									{
+										...j,
+										hasGeneratedCv: Boolean(j.generatedCv),
+										hasGeneratedCl: Boolean(j.generatedCl),
+									},
+								]),
+							);
 							return prev.map((j) => updatedMap[j.id] ?? j);
 						});
 						enqueueSnackbar(`${ids.length} document(s) generated`, { variant: "success" });
@@ -467,8 +490,8 @@ export default function Jobs() {
 		});
 	}, []);
 
-	const toGenerate = jobs.filter((j) => selectedIds.includes(j.id) && !j.generatedCv).map((j) => j.id);
-	const toRegen = jobs.filter((j) => selectedIds.includes(j.id) && j.generatedCv).map((j) => j.id);
+	const toGenerate = jobs.filter((j) => selectedIds.includes(j.id) && !j.hasGeneratedCv).map((j) => j.id);
+	const toRegen = jobs.filter((j) => selectedIds.includes(j.id) && j.hasGeneratedCv).map((j) => j.id);
 	const screenable =
 		selectedIds.length > 0
 			? jobs.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened").length
@@ -480,7 +503,14 @@ export default function Jobs() {
 				<AddJobDialog
 					onClose={() => setShowAddJob(false)}
 					onAdded={(job) => {
-						setJobs((prev) => [job, ...prev]);
+						setJobs((prev) => [
+							{
+								...job,
+								hasGeneratedCv: Boolean(job.generatedCv),
+								hasGeneratedCl: Boolean(job.generatedCl),
+							},
+							...prev,
+						]);
 						enqueueSnackbar(`Added ${job.title} at ${job.company}`, { variant: "success" });
 						if (job.description) {
 							screenJobs([job.id], {
@@ -605,25 +635,29 @@ export default function Jobs() {
 
 			{/* Grid */}
 			<div className="flex-1 min-h-0">
-				<AgGridReact
-					theme={gridTheme}
-					rowData={filteredJobs}
-					columnDefs={colDefs}
-					suppressCellFocus
-					getRowId={(params) => params.data.id}
-					getRowStyle={({ data }) => ({
-						borderLeft: `2px solid ${(RELEVANCE_META[data?.relevanceStatus] ?? RELEVANCE_META.unscreened).hex}`,
-					})}
-					rowSelection={{
-						mode: "multiRow",
-						checkboxes: true,
-						headerCheckbox: true,
-						enableClickSelection: false,
-					}}
-					onSelectionChanged={(e) => setSelectedIds(e.api.getSelectedRows().map((r) => r.id))}
-					defaultColDef={{ resizable: true }}
-					initialState={{ sort: { sortModel: [{ colId: "fetchedAt", sort: "desc" }] } }}
-				/>
+				{firstLoad ? (
+					<TableSkeleton rows={12} />
+				) : (
+					<AgGridReact
+						theme={gridTheme}
+						rowData={filteredJobs}
+						columnDefs={colDefs}
+						suppressCellFocus
+						getRowId={(params) => params.data.id}
+						getRowStyle={({ data }) => ({
+							borderLeft: `2px solid ${(RELEVANCE_META[data?.relevanceStatus] ?? RELEVANCE_META.unscreened).hex}`,
+						})}
+						rowSelection={{
+							mode: "multiRow",
+							checkboxes: true,
+							headerCheckbox: true,
+							enableClickSelection: false,
+						}}
+						onSelectionChanged={(e) => setSelectedIds(e.api.getSelectedRows().map((r) => r.id))}
+						defaultColDef={{ resizable: true }}
+						initialState={{ sort: { sortModel: [{ colId: "fetchedAt", sort: "desc" }] } }}
+					/>
+				)}
 			</div>
 		</div>
 	);

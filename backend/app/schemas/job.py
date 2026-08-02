@@ -38,6 +38,38 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobListItem(BaseModel):
+    """Jobs-table row: light fields + has-doc flags, no heavy text. Full content
+    loads per-job from GET /jobs/{id}."""
+
+    id: str
+    userId: str
+    title: str
+    company: str
+    location: str | None = None
+    url: str | None = None
+    salary: str | None = None
+    jobType: str | None = None
+    source: str | None = None
+    fetchedAt: datetime | None = None
+    relevanceStatus: str
+    archetype: str | None = None
+    screeningScore: str | None = None
+    screeningReason: str | None = None
+    agentStatus: str
+    atsScore: int | None = None
+    atsBreakdown: str | None = None
+    applicationStatus: str
+    applicationDate: datetime | None = None
+    generatedAt: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    hasGeneratedCv: bool = False
+    hasGeneratedCl: bool = False
+
+    model_config = {"from_attributes": True}
+
+
 class TweakRequest(BaseModel):
     target: str  # "cv" | "cl"
     prompt: str

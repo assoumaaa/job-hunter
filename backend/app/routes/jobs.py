@@ -14,6 +14,7 @@ from ..schemas.job import (
     ExtractUrlRequest,
     GenerateRequest,
     JobDeleteRequest,
+    JobListItem,
     JobOut,
     JobUpdateRequest,
     ManualJobRequest,
@@ -29,32 +30,64 @@ from ..services import claude, intake, job_extractor, pdf_generator
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-def _get_job_or_404(db: Session, job_id: str, current_user: User) -> Job:
+def _get_job(db: Session, job_id: str, current_user: User) -> Job:
     job = db.query(Job).filter(Job.id == job_id, Job.userId == current_user.id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
 
-@router.get("", response_model=list[JobOut])
+@router.get("", response_model=list[JobListItem])
 def get_jobs(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
 ):
-    # Fix jobs stuck in generating/reviewing that already have a CV
-    db.query(Job).filter(
-        Job.userId == current_user.id,
-        Job.agentStatus.in_(["generating", "reviewing"]),
-        Job.generatedCv.isnot(None),
-    ).update({"agentStatus": "done"}, synchronize_session=False)
-    db.commit()
-
-    jobs = (
+    # Fix jobs stuck generating that already have a CV; only commit if changed.
+    fixed = (
         db.query(Job)
+        .filter(
+            Job.userId == current_user.id,
+            Job.agentStatus.in_(["generating", "reviewing"]),
+            Job.generatedCv.isnot(None),
+        )
+        .update({"agentStatus": "done"}, synchronize_session=False)
+    )
+    if fixed:
+        db.commit()
+
+    # Light columns + has-doc flags only; keep the heavy text out of list loads.
+    has_cv = Job.generatedCv.isnot(None).label("hasGeneratedCv")
+    has_cl = Job.generatedCl.isnot(None).label("hasGeneratedCl")
+    light_cols = [
+        c
+        for c in Job.__table__.columns
+        if c.name
+        not in {
+            "description",
+            "generatedCv",
+            "generatedCl",
+            "originalCv",
+            "originalCl",
+            "chatCv",
+            "chatCl",
+        }
+    ]
+    rows = (
+        db.query(*light_cols, has_cv, has_cl)
         .filter(Job.userId == current_user.id)
         .order_by(Job.fetchedAt.desc())
         .all()
     )
-    return jobs
+    return [JobListItem.model_validate(dict(row._mapping)) for row in rows]
+
+
+@router.get("/{job_id}", response_model=JobOut)
+def get_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Full job incl. the heavy text columns — loaded when a single job is opened."""
+    return _get_job(db, job_id, current_user)
 
 
 @router.patch("", response_model=JobOut)
@@ -63,7 +96,7 @@ def update_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    job = _get_job_or_404(db, body.id, current_user)
+    job = _get_job(db, body.id, current_user)
 
     update_data = body.model_dump(exclude={"id"}, exclude_none=True)
     for key, value in update_data.items():
@@ -220,7 +253,7 @@ def tweak_job_doc(
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt is empty")
 
-    job = _get_job_or_404(db, job_id, current_user)
+    job = _get_job(db, job_id, current_user)
 
     base_cv = intake.load_base_cv(db, current_user)
     if base_cv is None:
@@ -302,7 +335,7 @@ def reset_job_tweaks(
     current_user: User = Depends(get_current_user),
 ):
     """Restore generatedCv / generatedCl from their pre-tweak snapshots."""
-    job = _get_job_or_404(db, job_id, current_user)
+    job = _get_job(db, job_id, current_user)
 
     if not (job.originalCv or job.originalCl):
         raise HTTPException(

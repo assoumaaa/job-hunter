@@ -5,9 +5,7 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
 
-# Managed Postgres (Render, Heroku, …) hands out a bare `postgresql://` (or the
-# legacy `postgres://`) URL, which SQLAlchemy routes to psycopg2 — but this
-# project ships psycopg (v3). Pin the driver so the provider's URL works unchanged.
+# Pin a bare postgres:// URL (Render/Heroku give one) to the psycopg v3 driver.
 _db_url = settings.DATABASE_URL
 if _db_url.startswith("postgres://"):
     _db_url = "postgresql+psycopg://" + _db_url[len("postgres://") :]

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "components/ui/button";
 import { EmptyState } from "components/ui/empty-state";
+import { FormSkeleton } from "components/ui/skeleton";
 import { PageHeader } from "components/ui/page-header";
 import UploadZone from "./UploadZone";
 import { useAuth } from "@clerk/clerk-react";
@@ -29,6 +30,7 @@ export default function CV() {
 	const [uploading, setUploading] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [hasData, setHasData] = useState(false);
+	const [firstLoad, setFirstLoad] = useState(true);
 
 	const [callApi] = useCallApi();
 	const { getToken } = useAuth();
@@ -42,7 +44,9 @@ export default function CV() {
 					setCv({ ...EMPTY_CV, ...parsed });
 					setHasData(true);
 				}
+				setFirstLoad(false);
 			},
+			onError: () => setFirstLoad(false),
 		});
 	}, []);
 
@@ -141,6 +145,10 @@ export default function CV() {
 			<div className="flex gap-4 flex-1 min-h-0 p-4">
 				{/* Editor */}
 				<div className="flex-1 overflow-y-auto space-y-3 pr-1 max-w-[700px]">
+					{firstLoad ? (
+						<FormSkeleton fields={6} />
+					) : (
+						<>
 					<UploadZone onUpload={handleUpload} uploading={uploading} />
 
 					<Section title="Contact information">
@@ -527,6 +535,8 @@ export default function CV() {
 					</Section>
 
 					<div className="h-8" />
+						</>
+					)}
 				</div>
 
 				{/* Preview */}

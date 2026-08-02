@@ -2,43 +2,54 @@ import { FileText } from "lucide-react";
 import { useState } from "react";
 import { useCallApi } from "services";
 
-export default function DocChip({ value, label, contact }) {
+// List rows don't carry doc content — fetch it by id on click, then compile.
+export default function DocChip({ jobId, label, ready, contact }) {
 	const [loading, setLoading] = useState(false);
 	const [callApi] = useCallApi();
-
-	const ready = Boolean(value);
 
 	const openPdf = () => {
 		if (!ready || loading) return;
 		setLoading(true);
 
 		const isCv = label === "CV";
-		let endpoint, json;
 
-		if (isCv) {
-			let structuredData;
-			try {
-				structuredData = typeof value === "string" ? JSON.parse(value) : value;
-			} catch {
-				setLoading(false);
-				return;
-			}
-			endpoint = "/cv/compile";
-			json = { structuredData };
-		} else {
-			endpoint = "/cv/compile-cl";
-			json = { text: value, contact };
-		}
+		callApi(`/jobs/${jobId}`, {
+			error: "Failed to load document",
+			onSuccess: (job) => {
+				const value = isCv ? job.generatedCv : job.generatedCl;
+				if (!value) {
+					setLoading(false);
+					return;
+				}
 
-		callApi(endpoint, {
-			method: "POST",
-			json,
-			responseType: "blob",
-			error: "PDF compile failed",
-			onSuccess: (blob) => {
-				window.open(URL.createObjectURL(blob), "_blank");
+				let endpoint, json;
+				if (isCv) {
+					let structuredData;
+					try {
+						structuredData = typeof value === "string" ? JSON.parse(value) : value;
+					} catch {
+						setLoading(false);
+						return;
+					}
+					endpoint = "/cv/compile";
+					json = { structuredData };
+				} else {
+					endpoint = "/cv/compile-cl";
+					json = { text: value, contact };
+				}
+
+				callApi(endpoint, {
+					method: "POST",
+					json,
+					responseType: "blob",
+					error: "PDF compile failed",
+					onSuccess: (blob) => {
+						window.open(URL.createObjectURL(blob), "_blank");
+					},
+				}).finally(() => setLoading(false));
 			},
-		}).finally(() => setLoading(false));
+			onError: () => setLoading(false),
+		});
 	};
 
 	if (!ready) {

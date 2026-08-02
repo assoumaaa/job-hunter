@@ -64,14 +64,9 @@ export default function TweakJob() {
 
 	// Load job + profile contact on mount
 	useEffect(() => {
-		callApi("/jobs", {
-			onSuccess: (jobs) => {
-				const found = jobs.find((j) => j.id === jobId);
-				if (!found) {
-					enqueueSnackbar("Job not found", { variant: "error" });
-					navigate("/jobs");
-					return;
-				}
+		callApi(`/jobs/${jobId}`, {
+			suppressError: true,
+			onSuccess: (found) => {
 				setJob(found);
 				setCv(parseCv(found.generatedCv));
 				setCl(found.generatedCl || "");
@@ -79,7 +74,10 @@ export default function TweakJob() {
 				setMessagesCv(parseHistory(found.chatCv));
 				setMessagesCl(parseHistory(found.chatCl));
 			},
-			error: "Failed to load job",
+			onError: () => {
+				enqueueSnackbar("Job not found", { variant: "error" });
+				navigate("/jobs");
+			},
 		});
 		callApi("/profile", {
 			onSuccess: (d) =>

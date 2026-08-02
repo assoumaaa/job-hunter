@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, Save, X } from "lucide-react";
 
 import { Button } from "components/ui/button";
+import { FormSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { useCallApi } from "services";
@@ -43,6 +44,7 @@ export default function Profile() {
 	});
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [firstLoad, setFirstLoad] = useState(true);
 	const [langName, setLangName] = useState("");
 	const [langLevel, setLangLevel] = useState("Fluent");
 
@@ -59,7 +61,7 @@ export default function Profile() {
 
 	useEffect(() => {
 		callApi("/profile", {
-			onSuccess: (d) =>
+			onSuccess: (d) => {
 				setForm({
 					fullName: d.fullName ?? "",
 					linkedinUrl: d.linkedinUrl ?? "",
@@ -69,7 +71,10 @@ export default function Profile() {
 					currentLocation: d.currentLocation ?? "",
 					noticePeriod: d.noticePeriod ?? "",
 					languages: d.languages ? JSON.parse(d.languages) : [],
-				}),
+				});
+				setFirstLoad(false);
+			},
+			onError: () => setFirstLoad(false),
 		});
 	}, []);
 
@@ -109,6 +114,9 @@ export default function Profile() {
 
 			<div className="flex-1 overflow-y-auto">
 				<div className="max-w-[760px] mx-auto px-8 py-8">
+					{firstLoad ? (
+						<FormSkeleton fields={8} />
+					) : (
 					<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] divide-y divide-zinc-100">
 						<Row label="Full name" description="Used in cover letters">
 							<Input value={form.fullName} onChange={(e) => set("fullName", e.target.value)} placeholder="Your full name" className="w-56" />
@@ -196,6 +204,7 @@ export default function Profile() {
 							</div>
 						</div>
 					</div>
+					)}
 				</div>
 			</div>
 		</div>
