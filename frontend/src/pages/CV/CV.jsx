@@ -8,15 +8,14 @@ import {
 	GraduationCap,
 	Languages,
 	Save,
-	Sparkles,
 	User,
 	Wrench,
 } from "lucide-react";
+import { EMPTY_CV, normalizeCv, serializeForSave } from "./cvData";
 import { useEffect, useState } from "react";
 
-import CvEditor from "./CvEditor";
-import { EMPTY_CV, normalizeCv, serializeForSave } from "./cvData";
 import { Button } from "components/ui/button";
+import CvEditor from "./CvEditor";
 import { FormSkeleton } from "components/ui/skeleton";
 import { Modal } from "components/ui/modal";
 import { PageHeader } from "components/ui/page-header";
@@ -122,7 +121,6 @@ export default function CV() {
 	const sections = [
 		{ id: "contact", label: "Contact", icon: User },
 		{ id: "summary", label: "Summary", icon: FileText },
-		{ id: "competencies", label: "Core competencies", icon: Sparkles, count: cv.competencies.length },
 		{ id: "experience", label: "Work experience", icon: Briefcase, count: cv.experience.length },
 		{ id: "projects", label: "Projects", icon: FolderGit2, count: cv.projects.length },
 		{ id: "education", label: "Education", icon: GraduationCap, count: cv.education.length },
@@ -135,7 +133,6 @@ export default function CV() {
 		<div className="flex h-full flex-col overflow-hidden">
 			<PageHeader
 				title="My CV"
-				subtitle="Upload a PDF or edit sections inline"
 				actions={
 					<>
 						<Button variant="outline" size="sm" onClick={save} disabled={saving}>
@@ -168,7 +165,9 @@ export default function CV() {
 							type="button"
 							onClick={() => setActiveSection(s.id)}
 							className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
-								active ? "border-violet-500 text-violet-700" : "border-transparent text-zinc-500 hover:text-zinc-800"
+								active
+									? "border-violet-500 text-violet-700"
+									: "border-transparent text-zinc-500 hover:text-zinc-800"
 							}`}
 						>
 							<Icon className="h-3.5 w-3.5" />

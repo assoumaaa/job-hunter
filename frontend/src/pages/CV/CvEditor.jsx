@@ -1,4 +1,4 @@
-import { Award, FileText, FolderGit2, GraduationCap, Languages, Plus, Sparkles, User, Wrench } from "lucide-react";
+import { Award, FileText, FolderGit2, GraduationCap, Languages, Plus, User, Wrench } from "lucide-react";
 
 import ExperienceSection from "./ExperienceSection";
 import UploadZone from "./UploadZone";
@@ -37,11 +37,6 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 					minRows={3}
 					placeholder="Brief professional summary (2–3 sentences)…"
 				/>
-			</Section>
-		),
-		competencies: (
-			<Section bare icon={Sparkles} title="Core competencies">
-				<TagEditor tags={cv.competencies} onChange={(v) => setList("competencies", v)} placeholder="e.g. Distributed Systems" />
 			</Section>
 		),
 		experience: <ExperienceSection experience={cv.experience} onChange={(list) => setList("experience", list)} />,
