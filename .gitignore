@@ -21,3 +21,6 @@ __pycache__/
 # build
 frontend/build/
 frontend/dist/
+
+# brainstorming mockups (visual companion)
+.superpowers/

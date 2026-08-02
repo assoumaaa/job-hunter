@@ -86,10 +86,15 @@ def _normalize_for_ats(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Build HTML from structured CV data
 # ---------------------------------------------------------------------------
+def _bullet_text(b) -> str:
+    """A bullet is either a plain string (legacy/always-on) or {text, condition}."""
+    return b.get("text", "") if isinstance(b, dict) else str(b)
+
+
 def _build_experience_html(experience: list) -> str:
     parts = []
     for job in experience:
-        bullets = "".join(f"<li>{_esc(b)}</li>" for b in job.get("bullets", []))
+        bullets = "".join(f"<li>{_esc(_bullet_text(b))}</li>" for b in job.get("bullets", []))
         location = _esc(job.get("location", ""))
         parts.append(f"""<div class="job avoid-break">
   <div class="job-header">

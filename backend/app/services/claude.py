@@ -447,6 +447,38 @@ def trim_resume_for_fit(resume: dict, overflow_words: int) -> dict:
         return resume
 
 
+def select_conditional_bullets(job_description: str, conditions: list[str]) -> list[bool]:
+    """For each plain-English inclusion condition, decide whether the job matches
+    (i.e. the bullet should be included). Defaults to include-all on any failure —
+    better to keep a bullet than silently drop it."""
+    if not conditions:
+        return []
+    numbered = "\n".join(f"{i + 1}. {c}" for i, c in enumerate(conditions))
+    system = (
+        "You decide which of a candidate's resume bullets to include for a job. "
+        "Each bullet has a plain-English condition describing when it is relevant. "
+        "Return true if the job matches the condition (include the bullet), else false."
+    )
+    user = (
+        f"JOB DESCRIPTION:\n{job_description.strip() or '(none provided)'}\n\n"
+        f"CONDITIONS:\n{numbered}\n\n"
+        f"Return ONLY a JSON array of {len(conditions)} booleans, one per condition in order."
+    )
+    try:
+        text = llm.complete_text(
+            model=llm.screening_model(),
+            max_tokens=512,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        )
+        data = json.loads(_strip_fences(text))
+        if isinstance(data, list) and len(data) == len(conditions):
+            return [bool(x) for x in data]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("select_conditional_bullets failed (%s); including all.", e)
+    return [True] * len(conditions)
+
+
 # ---------------------------------------------------------------------------
 # Edit-a-CV chat: a real back-and-forth over an already-generated CV or CL.
 #

@@ -76,3 +76,29 @@ def test_fetch_maps_postings_and_dedups(db, monkeypatch):
     inserted = db.query(Job).filter(Job.title == "New Role").first()
     assert inserted.source == "linkedin"
     assert inserted.jobType == "Full-time"  # job_type or seniority_level
+
+
+def test_resolve_conditional_bullets_drops_non_matching(fake_llm):
+    fake_llm(["[true, false]"])  # 1st condition matches the job, 2nd doesn't
+    base = {
+        "experience": [
+            {
+                "company": "X",
+                "bullets": [
+                    "always A",
+                    {"text": "devops B", "condition": "if the job involves devops"},
+                    {"text": "fintech C", "condition": "if the job is fintech"},
+                ],
+            }
+        ]
+    }
+    out = intake._resolve_conditional_bullets(base, "DevOps/Kubernetes engineer")
+    assert out["experience"][0]["bullets"] == ["always A", "devops B"]
+
+
+def test_resolve_conditional_bullets_no_conditions_skips_llm(fake_llm):
+    # No conditional bullets → no LLM call; the default reply must never be used.
+    fake_llm(default="MUST-NOT-BE-USED")
+    base = {"experience": [{"bullets": ["a", {"text": "b", "condition": ""}]}]}
+    out = intake._resolve_conditional_bullets(base, "any jd")
+    assert out["experience"][0]["bullets"] == ["a", "b"]

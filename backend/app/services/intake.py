@@ -20,7 +20,15 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..models import CV, Job, Position, Profile, User
-from . import apify, ats_scorer, claude, credentials, job_extractor, pdf_generator, resume
+from . import (
+    apify,
+    ats_scorer,
+    claude,
+    credentials,
+    job_extractor,
+    pdf_generator,
+    resume,
+)
 from .errors import IntakeError
 
 __all__ = ["IntakeError", "fetch", "screen", "generate_for_jobs", "load_base_cv"]
@@ -79,7 +87,9 @@ def _build_profile_context(profile: Profile | None) -> str:
     languages = _profile_list(profile, "languages")
     keywords = _profile_list(profile, "keywords")
     lang_str = (
-        ", ".join(f"{lg['name']} ({lg['level']})" for lg in languages) if languages else ""
+        ", ".join(f"{lg['name']} ({lg['level']})" for lg in languages)
+        if languages
+        else ""
     )
     kw_str = ", ".join(keywords) if keywords else ""
     return (
@@ -226,6 +236,43 @@ def screen(db: Session, user: User, ids: list[str] | None = None) -> ScreenOutco
     )
 
 
+def _resolve_conditional_bullets(base_cv: dict, job_description: str) -> dict:
+    """Copy of base_cv with every experience bullet flattened to a plain string,
+    dropping conditional bullets whose condition the job doesn't match. A bullet is
+    either a plain string (always) or {"text", "condition"}. Costs one cheap LLM
+    call, and only when conditional bullets actually exist."""
+    import copy
+
+    cv = copy.deepcopy(base_cv)
+    experience = cv.get("experience") or []
+
+    conditions: list[str] = []
+    for exp in experience:
+        for b in exp.get("bullets") or []:
+            if isinstance(b, dict) and (b.get("condition") or "").strip():
+                cond = b["condition"].strip()
+                if cond not in conditions:
+                    conditions.append(cond)
+
+    matched: set[str] = set()
+    if conditions:
+        flags = claude.select_conditional_bullets(job_description, conditions)
+        matched = {c for c, keep in zip(conditions, flags) if keep}
+
+    for exp in experience:
+        flat: list[str] = []
+        for b in exp.get("bullets") or []:
+            if isinstance(b, dict):
+                cond = (b.get("condition") or "").strip()
+                text = (b.get("text") or "").strip()
+                if text and (not cond or cond in matched):
+                    flat.append(text)
+            elif b:
+                flat.append(str(b))
+        exp["bullets"] = flat
+    return cv
+
+
 # ---------------------------------------------------------------------------
 # Generate: tailor + score + fit + persist a CV/CL for each selected job.
 # ---------------------------------------------------------------------------
@@ -252,14 +299,14 @@ def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
         job.agentStatus = "generating"
         db.commit()
 
-        # Status callback flips the job to "reviewing" once we start iterating
         def _on_pass(pass_num, _score, _job=job):
             if pass_num >= 2:
                 _job.agentStatus = "reviewing"
                 db.commit()
 
+        effective_cv = _resolve_conditional_bullets(base_cv_data, job.description or "")
         result = claude.tailor_cv_iterative(
-            base_cv=base_cv_data,
+            base_cv=effective_cv,
             job_description=job.description or "",
             job_title=job.title,
             company=job.company,
