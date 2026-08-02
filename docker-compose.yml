@@ -1,0 +1,26 @@
+# Local Postgres for job-hunter dev.
+#   docker compose up -d db      # start Postgres in the background
+#   docker compose down          # stop it (data is kept in the named volume)
+#   docker compose down -v       # stop it and wipe the data
+#
+# The backend defaults to this instance (see backend DATABASE_URL default).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: job-hunter-db
+    environment:
+      POSTGRES_USER: jobhunter
+      POSTGRES_PASSWORD: jobhunter
+      POSTGRES_DB: jobhunter
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobhunter-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobhunter -d jobhunter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  jobhunter-pgdata:

@@ -31,17 +31,24 @@ from typing import Any, Protocol
 
 import anthropic
 
-from ..core.config import settings
+from . import credentials
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Model registry — the two tiers, named once, sourced from config.
-# Haiku for cheap bulk work (screening, parsing, scoring); Sonnet for quality
-# generation and judgment.
+# Model registry — the two tiers, resolved per request. Haiku for cheap bulk
+# work (screening, parsing, scoring); Sonnet for quality generation and
+# judgment. The concrete model id comes from the active credential bundle
+# (per-user choice → config default), so callers say which *tier* they want.
 # ---------------------------------------------------------------------------
-SCREENING_MODEL = settings.LLM_SCREENING_MODEL
-GENERATION_MODEL = settings.LLM_GENERATION_MODEL
+def screening_model() -> str:
+    """The model id for cheap bulk work, for the current request."""
+    return credentials.current().screening_model
+
+
+def generation_model() -> str:
+    """The model id for quality generation, for the current request."""
+    return credentials.current().generation_model
 
 # A system prompt is either a plain string or a list of cache-control blocks.
 System = str | list[dict[str, Any]]
@@ -99,13 +106,27 @@ def _decode(resp) -> LLMResult:
     return LLMResult(text=text, tool_input=tool_input)
 
 
+# Anthropic clients cached per API key — a request uses the current user's key
+# (or the .env fallback), and we don't rebuild the client on every call.
+_clients: dict[str, anthropic.Anthropic] = {}
+
+
+def _client_for(api_key: str) -> anthropic.Anthropic:
+    client = _clients.get(api_key)
+    if client is None:
+        client = anthropic.Anthropic(api_key=api_key)
+        _clients[api_key] = client
+    return client
+
+
 class AnthropicLLM:
-    """The production adapter: the one and only Anthropic client."""
+    """The production adapter: resolves the active user's key per call and reuses
+    a cached client per distinct key."""
 
     def __init__(self, client: anthropic.Anthropic | None = None) -> None:
-        self._client = client or anthropic.Anthropic(
-            api_key=settings.ANTHROPIC_API_KEY
-        )
+        # An explicit client is an escape hatch (tests); otherwise the key is
+        # resolved per call from the active credential bundle.
+        self._client = client
 
     def run(
         self,
@@ -117,6 +138,7 @@ class AnthropicLLM:
         tools: list[dict] | None = None,
         tool_choice: dict | None = None,
     ) -> LLMResult:
+        client = self._client or _client_for(credentials.require_anthropic())
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
@@ -128,7 +150,7 @@ class AnthropicLLM:
             kwargs["tools"] = tools
         if tool_choice is not None:
             kwargs["tool_choice"] = tool_choice
-        return _decode(self._client.messages.create(**kwargs))
+        return _decode(client.messages.create(**kwargs))
 
 
 class FakeLLM:

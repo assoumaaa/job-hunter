@@ -16,7 +16,8 @@ from ..schemas.cv import (
     CVParseTextRequest,
     CVUpdateRequest,
 )
-from ..services import claude, cv_parser, pdf_generator
+from ..services import claude, credentials, cv_parser, pdf_generator
+from ..services.errors import IntakeError
 
 router = APIRouter(prefix="/cv", tags=["cv"])
 
@@ -51,6 +52,7 @@ def upsert_cv(
 @router.post("/upload")
 def upload_cv(
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Upload a PDF resume and parse it into structured JSON.
@@ -64,20 +66,29 @@ def upload_cv(
     if len(pdf_bytes) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
 
-    parsed = cv_parser.parse_pdf(pdf_bytes)
+    try:
+        with credentials.active(credentials.resolve(db, current_user)):
+            parsed = cv_parser.parse_pdf(pdf_bytes)
+    except IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     return {"structuredData": parsed}
 
 
 @router.post("/parse-text")
 def parse_cv_text(
     body: CVParseTextRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Parse raw CV text into structured JSON."""
     if not body.text.strip():
         raise HTTPException(status_code=400, detail="No text provided")
 
-    parsed = cv_parser.parse_cv_text(body.text)
+    try:
+        with credentials.active(credentials.resolve(db, current_user)):
+            parsed = cv_parser.parse_cv_text(body.text)
+    except IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     return {"structuredData": parsed}
 
 

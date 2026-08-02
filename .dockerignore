@@ -1,0 +1,23 @@
+# Keep secrets, local state, and bulky/irrelevant dirs out of the build context
+# and image layers.
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+frontend/build
+frontend/dist
+.git
+.gitignore
+**/.DS_Store
+**/.vscode
+.claude
+**/.claude
+career-ops
+docs
+*.md

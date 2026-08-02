@@ -25,3 +25,9 @@ class User(Base):
     profile = relationship(
         "Profile", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    settings = relationship(
+        "UserSettings",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )

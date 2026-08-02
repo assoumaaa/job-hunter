@@ -4,6 +4,7 @@ from .job_settings import router as job_settings_router
 from .jobs import router as jobs_router
 from .positions import router as positions_router
 from .profile import router as profile_router
+from .settings import router as settings_router
 
 __all__ = [
     "auth_router",
@@ -12,4 +13,5 @@ __all__ = [
     "profile_router",
     "job_settings_router",
     "cv_router",
+    "settings_router",
 ]

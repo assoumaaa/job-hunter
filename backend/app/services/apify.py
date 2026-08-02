@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from apify_client import ApifyClient
 
-from ..core.config import settings
+from . import credentials
 
 # Country code → LinkedIn geoId + locationName
 # Same subset as the TypeScript version
@@ -51,7 +51,7 @@ def fetch_linkedin_jobs(
 ) -> list[ApifyJob]:
     country_codes = [] if country_codes is None else country_codes
     job_types = ["fulltime"] if job_types is None else job_types
-    apify = ApifyClient(settings.APIFY_TOKEN)
+    apify = ApifyClient(credentials.require_apify())
 
     tpr = DATE_POSTED_FILTERS.get(date_posted, DATE_POSTED_FILTERS["month"])
     jt_codes = [JOB_TYPE_CODES.get(t, t) for t in job_types if JOB_TYPE_CODES.get(t, t)]

@@ -12,6 +12,7 @@ route should surface; the route is the only place that knows about HTTP.
 
 from __future__ import annotations
 
+import functools
 import json
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -19,19 +20,24 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ..models import CV, Job, Position, Profile, User
-from . import apify, ats_scorer, claude, job_extractor, pdf_generator, resume
+from . import apify, ats_scorer, claude, credentials, job_extractor, pdf_generator, resume
+from .errors import IntakeError
+
+__all__ = ["IntakeError", "fetch", "screen", "generate_for_jobs", "load_base_cv"]
 
 
-class IntakeError(Exception):
-    """A domain precondition failed (no CV, no positions, ...).
+def _with_credentials(fn):
+    """Install the user's resolved credential bundle (per-user keys/models →
+    `.env` fallback) for the duration of an entry point. Every route-facing
+    pipeline function takes `(db, user, ...)`, so the bundle resolves the same
+    way for all of them and the LLM/Apify seams read it back downstream."""
 
-    `status_code` is the HTTP status the route should map this to.
-    """
+    @functools.wraps(fn)
+    def wrapper(db: Session, user: User, *args, **kwargs):
+        with credentials.active(credentials.resolve(db, user)):
+            return fn(db, user, *args, **kwargs)
 
-    def __init__(self, message: str, status_code: int = 400) -> None:
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
+    return wrapper
 
 
 @dataclass
@@ -91,6 +97,7 @@ def _build_profile_context(profile: Profile | None) -> str:
 # ---------------------------------------------------------------------------
 # Fetch: pull postings from LinkedIn and store the new ones.
 # ---------------------------------------------------------------------------
+@_with_credentials
 def fetch(db: Session, user: User, date_posted: str) -> FetchOutcome:
     positions = db.query(Position).filter(Position.userId == user.id).all()
     if not positions:
@@ -138,6 +145,7 @@ def fetch(db: Session, user: User, date_posted: str) -> FetchOutcome:
 # ---------------------------------------------------------------------------
 # Screen: score fetched jobs for relevance and persist the verdict.
 # ---------------------------------------------------------------------------
+@_with_credentials
 def screen(db: Session, user: User, ids: list[str] | None = None) -> ScreenOutcome:
     query = db.query(Job).filter(Job.userId == user.id)
     if ids:
@@ -221,6 +229,7 @@ def screen(db: Session, user: User, ids: list[str] | None = None) -> ScreenOutco
 # ---------------------------------------------------------------------------
 # Generate: tailor + score + fit + persist a CV/CL for each selected job.
 # ---------------------------------------------------------------------------
+@_with_credentials
 def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
     base_cv_data = load_base_cv(db, user)
     if base_cv_data is None:

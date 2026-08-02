@@ -9,6 +9,7 @@ next.
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401 — registers every model on Base
 from app.core.db import Base
@@ -31,7 +32,11 @@ def restore_renderer():
 def db():
     """A throwaway in-memory SQLite session with every table created."""
     engine = create_engine(
-        "sqlite:///:memory:", connect_args={"check_same_thread": False}
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        # One shared connection so the schema is visible across threads too (the
+        # TestClient runs sync endpoints in a worker thread).
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()

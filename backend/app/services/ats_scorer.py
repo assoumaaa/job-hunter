@@ -135,7 +135,7 @@ def analyze_jd(job_description: str) -> JDAnalysis:
 
     try:
         data = llm.complete_json(
-            model=llm.SCREENING_MODEL,
+            model=llm.screening_model(),
             max_tokens=1024,
             messages=[
                 {
@@ -349,7 +349,7 @@ def _llm_evaluate(
     )
     try:
         data = llm.complete_json(
-            model=llm.SCREENING_MODEL,
+            model=llm.screening_model(),
             max_tokens=512,
             messages=[
                 {"role": "user", "content": _EVALUATOR_PROMPT + "\n\n" + payload},
@@ -523,7 +523,7 @@ def critique(
     )
     try:
         data = llm.complete_json(
-            model=llm.GENERATION_MODEL,
+            model=llm.generation_model(),
             max_tokens=1500,
             messages=[{"role": "user", "content": _REVIEWER_PROMPT + "\n\n" + payload}],
         )
