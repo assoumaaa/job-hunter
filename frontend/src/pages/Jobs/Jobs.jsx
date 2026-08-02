@@ -44,8 +44,11 @@ const FETCH_RANGES = [
 
 const PULSE_STYLE = { animation: "pulse 1.2s ease-in-out infinite" };
 
-// In-session cache so revisiting Jobs renders instantly, then revalidates.
-let jobsCache = null;
+const PAGE_SIZE = 50;
+
+// ag-grid colId → server-supported sort key. Only these columns are sortable;
+// everything else is a dumb renderer of the current server page.
+const SORT_MAP = { company: "company", atsScore: "atsScore", applicationDate: "applicationDate" };
 
 function SourceIcon({ source, className = "" }) {
 	if (source === "linkedin") {
@@ -153,15 +156,25 @@ function AppliedDateCell({ value, onChange }) {
 	);
 }
 
+const EMPTY_STATS = { total: 0, toApply: 0, applied: 0, interviews: 0, unscreened: 0, avgAts: null };
+
 export default function Jobs() {
-	const [jobs, setJobs] = useState(() => jobsCache ?? []);
-	const [firstLoad, setFirstLoad] = useState(() => !jobsCache);
+	const [jobs, setJobs] = useState([]);
+	const [total, setTotal] = useState(0);
+	const [firstLoad, setFirstLoad] = useState(true);
 	const [contact, setContact] = useState(null);
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
 	const [filterCompany, setFilterCompany] = useState("");
 	const [filterTitle, setFilterTitle] = useState("");
+	const [debCompany, setDebCompany] = useState("");
+	const [debTitle, setDebTitle] = useState("");
 	const [viewFilter, setViewFilter] = useState("to_apply");
+	const [sort, setSort] = useState("fetchedAt");
+	const [direction, setDirection] = useState("desc");
+	const [page, setPage] = useState(1);
+	const [stats, setStats] = useState(EMPTY_STATS);
+	const [reloadKey, setReloadKey] = useState(0);
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [showAddJob, setShowAddJob] = useState(false);
 
@@ -170,47 +183,65 @@ export default function Jobs() {
 	const { enqueueSnackbar } = useSnackbar();
 	const navigate = useNavigate();
 
+	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
 	const jobsRef = useRef([]);
 	useEffect(() => {
 		jobsRef.current = jobs;
 	}, [jobs]);
 
-	const filteredJobs = useMemo(
-		() =>
-			jobs.filter((j) => {
-				if (
-					viewFilter === "to_apply" &&
-					((j.relevanceStatus !== "good_fit" && j.relevanceStatus !== "maybe") ||
-						j.applicationStatus !== "new")
-				)
-					return false;
-				if (viewFilter === "applied" && j.applicationStatus !== "applied") return false;
-				if (viewFilter === "interview" && j.applicationStatus !== "interview") return false;
-				if (viewFilter === "rejected" && j.applicationStatus !== "rejected") return false;
-				if (viewFilter === "no_fit" && j.relevanceStatus !== "irrelevant") return false;
-				if (filterCompany && !j.company.toLowerCase().includes(filterCompany.toLowerCase())) return false;
-				if (filterTitle && !j.title.toLowerCase().includes(filterTitle.toLowerCase())) return false;
-				return true;
-			}),
-		[jobs, viewFilter, filterCompany, filterTitle],
-	);
+	const fetchStats = useCallback(() => {
+		callApi("/jobs/stats", {
+			suppressError: true,
+			onSuccess: (s) => setStats(s ?? EMPTY_STATS),
+		});
+	}, [callApi]);
 
-	const unscreenedCount = useMemo(() => jobs.filter((j) => j.relevanceStatus === "unscreened").length, [jobs]);
+	// Bump reloadKey to refetch the current page; pair with fetchStats after any
+	// mutation so both the list and the aggregate counts stay correct.
+	const refresh = useCallback(() => {
+		setReloadKey((k) => k + 1);
+		fetchStats();
+	}, [fetchStats]);
 
+	// Debounce the company/title inputs so typing doesn't spam the API, and reset
+	// to page 1 whenever the settled search terms change.
 	useEffect(() => {
-		jobsCache = jobs;
-	}, [jobs]);
+		const t = setTimeout(() => {
+			setDebCompany(filterCompany);
+			setDebTitle(filterTitle);
+			setPage(1);
+		}, 300);
+		return () => clearTimeout(t);
+	}, [filterCompany, filterTitle]);
 
-	const fetchJobs = useCallback(() => {
+	// Fetch the current page whenever the server-side query changes.
+	useEffect(() => {
 		callApi("/jobs", {
+			params: {
+				company: debCompany,
+				title: debTitle,
+				view: viewFilter,
+				sort,
+				direction,
+				page,
+				pageSize: PAGE_SIZE,
+			},
 			error: "Failed to load jobs",
-			onSuccess: (data) => {
-				setJobs(data);
+			onSuccess: (res) => {
+				setJobs(res.items ?? []);
+				setTotal(res.total ?? 0);
 				setFirstLoad(false);
 			},
 			onError: () => setFirstLoad(false),
 		});
-	}, [callApi]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [debCompany, debTitle, viewFilter, sort, direction, page, reloadKey]);
+
+	// If a mutation shrinks the result set below the current page, step back.
+	useEffect(() => {
+		if (page > totalPages) setPage(totalPages);
+	}, [page, totalPages]);
 
 	const patchJob = useCallback(
 		(id, data) => {
@@ -220,12 +251,13 @@ export default function Jobs() {
 				method: "PATCH",
 				json: { id, ...data },
 				error: "Failed to update job",
+				onSuccess: () => fetchStats(),
 				onError: () => {
 					if (original) setJobs((prev) => prev.map((j) => (j.id === id ? original : j)));
 				},
 			});
 		},
-		[callApi],
+		[callApi, fetchStats],
 	);
 
 	const screenJobs = useCallback(
@@ -242,11 +274,11 @@ export default function Jobs() {
 						`${prefix(data)}${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
 						{ variant },
 					);
-					fetchJobs();
+					refresh();
 				},
 			}).finally(() => setScreeningIds(new Set()));
 		},
-		[callApi, enqueueSnackbar, fetchJobs],
+		[callApi, enqueueSnackbar, refresh],
 	);
 
 	const colDefs = useMemo(() => {
@@ -255,6 +287,7 @@ export default function Jobs() {
 				field: "relevanceStatus",
 				headerName: "Fit",
 				width: 110,
+				sortable: false,
 				cellRenderer: ({ value, data }) =>
 					screeningIds.has(data.id) ? (
 						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-medium">
@@ -272,9 +305,11 @@ export default function Jobs() {
 			},
 			{
 				headerName: "Job",
+				colId: "company",
 				flex: 1,
 				minWidth: 280,
 				sortable: true,
+				comparator: () => 0,
 				cellStyle: { display: "flex", alignItems: "center" },
 				cellRenderer: ({ data }) => (
 					<div className="flex flex-col justify-center gap-0.5 h-full overflow-hidden min-w-0">
@@ -304,6 +339,7 @@ export default function Jobs() {
 				field: "applicationStatus",
 				headerName: "Status",
 				width: 130,
+				sortable: false,
 				cellRenderer: ({ value, data }) => (
 					<StatusChip
 						value={value}
@@ -323,11 +359,13 @@ export default function Jobs() {
 				headerName: "ATS",
 				width: 70,
 				sortable: true,
+				comparator: () => 0,
 				cellRenderer: ({ value }) => <AtsScoreCell value={value} />,
 			},
 			{
 				headerName: "Docs",
 				width: 130,
+				sortable: false,
 				cellRenderer: ({ data }) => {
 					const hasDocs = data.hasGeneratedCv || data.hasGeneratedCl;
 					const isGenerating = data.agentStatus === "generating";
@@ -358,6 +396,7 @@ export default function Jobs() {
 				headerName: "Applied",
 				width: 110,
 				sortable: true,
+				comparator: () => 0,
 				cellRenderer: ({ value, data }) => (
 					<AppliedDateCell value={value} onChange={(iso) => patchJob(data.id, { applicationDate: iso })} />
 				),
@@ -385,6 +424,20 @@ export default function Jobs() {
 		return cols;
 	}, [patchJob, screeningIds, contact, viewFilter, navigate]);
 
+	// Server drives sorting: read the grid's active sort column, map it to the
+	// backend sort/direction params, and reset to page 1 so the refetch lands.
+	const handleSortChanged = useCallback((e) => {
+		const active = e.api.getColumnState().find((c) => c.sort);
+		if (active && SORT_MAP[active.colId]) {
+			setSort(SORT_MAP[active.colId]);
+			setDirection(active.sort);
+		} else {
+			setSort("fetchedAt");
+			setDirection("desc");
+		}
+		setPage(1);
+	}, []);
+
 	const handleFetch = (range) => {
 		callApi("/jobs/fetch", {
 			method: "POST",
@@ -401,7 +454,7 @@ export default function Jobs() {
 						json: {},
 						alias: "fetchJobs",
 						suppressError: true,
-						onSuccess: fetchJobs,
+						onSuccess: refresh,
 					});
 				}
 			},
@@ -409,11 +462,30 @@ export default function Jobs() {
 	};
 
 	const handleScreen = () => {
-		const toScreen =
-			selectedIds.length > 0
-				? jobs.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened").map((j) => j.id)
-				: jobs.filter((j) => j.relevanceStatus === "unscreened").map((j) => j.id);
-		screenJobs(toScreen, { prefix: (d) => `${d.screened ?? 0} screened — ` });
+		if (selectedIds.length > 0) {
+			const ids = jobs
+				.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened")
+				.map((j) => j.id);
+			screenJobs(ids, { prefix: (d) => `${d.screened ?? 0} screened — ` });
+			return;
+		}
+
+		// No selection → screen ALL unscreened jobs across every page (empty ids).
+		const visibleUnscreened = jobs.filter((j) => j.relevanceStatus === "unscreened").map((j) => j.id);
+		setScreeningIds(new Set(visibleUnscreened));
+		callApi("/jobs/screen", {
+			method: "POST",
+			json: {},
+			alias: "screenJobs",
+			error: "Failed to screen jobs",
+			onSuccess: (data) => {
+				enqueueSnackbar(
+					`${data.screened ?? 0} screened — ${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
+					{ variant: "success" },
+				);
+				refresh();
+			},
+		}).finally(() => setScreeningIds(new Set()));
 	};
 
 	const handleDelete = () => {
@@ -429,8 +501,8 @@ export default function Jobs() {
 			success: `${selectedIds.length} job(s) deleted`,
 			error: "Failed to delete jobs",
 			onSuccess: () => {
-				setJobs((prev) => prev.filter((j) => !selectedIds.includes(j.id)));
 				setSelectedIds([]);
+				refresh();
 			},
 		});
 	};
@@ -453,21 +525,9 @@ export default function Jobs() {
 					json: { jobIds: ids },
 					alias: "generateJobs",
 					error: "Failed to generate documents",
-					onSuccess: (updatedJobs) => {
-						setJobs((prev) => {
-							const updatedMap = Object.fromEntries(
-								updatedJobs.map((j) => [
-									j.id,
-									{
-										...j,
-										hasGeneratedCv: Boolean(j.generatedCv),
-										hasGeneratedCl: Boolean(j.generatedCl),
-									},
-								]),
-							);
-							return prev.map((j) => updatedMap[j.id] ?? j);
-						});
+					onSuccess: () => {
 						enqueueSnackbar(`${ids.length} document(s) generated`, { variant: "success" });
+						refresh();
 					},
 				});
 			},
@@ -475,7 +535,7 @@ export default function Jobs() {
 	};
 
 	useEffect(() => {
-		fetchJobs();
+		fetchStats();
 
 		callApi("/profile", {
 			error: "Failed to load profile",
@@ -488,6 +548,7 @@ export default function Jobs() {
 				});
 			},
 		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const toGenerate = jobs.filter((j) => selectedIds.includes(j.id) && !j.hasGeneratedCv).map((j) => j.id);
@@ -495,7 +556,7 @@ export default function Jobs() {
 	const screenable =
 		selectedIds.length > 0
 			? jobs.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened").length
-			: unscreenedCount;
+			: stats.unscreened;
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
@@ -503,14 +564,6 @@ export default function Jobs() {
 				<AddJobDialog
 					onClose={() => setShowAddJob(false)}
 					onAdded={(job) => {
-						setJobs((prev) => [
-							{
-								...job,
-								hasGeneratedCv: Boolean(job.generatedCv),
-								hasGeneratedCl: Boolean(job.generatedCl),
-							},
-							...prev,
-						]);
 						enqueueSnackbar(`Added ${job.title} at ${job.company}`, { variant: "success" });
 						if (job.description) {
 							screenJobs([job.id], {
@@ -518,6 +571,8 @@ export default function Jobs() {
 								prefix: () => "Screening: ",
 								error: "Failed to screen job",
 							});
+						} else {
+							refresh();
 						}
 					}}
 				/>
@@ -532,7 +587,7 @@ export default function Jobs() {
 
 			<PageHeader
 				title="Jobs"
-				badge={filteredJobs.length}
+				badge={total}
 				actions={
 					<>
 						<FetchDropdown loading={loading?.fetchJobs} onFetch={handleFetch} />
@@ -593,7 +648,10 @@ export default function Jobs() {
 				</div>
 				<Select
 					value={viewFilter}
-					onChange={setViewFilter}
+					onChange={(v) => {
+						setViewFilter(v);
+						setPage(1);
+					}}
 					options={[
 						{ value: "to_apply", label: "To apply" },
 						{ value: "applied", label: "Applied" },
@@ -612,6 +670,7 @@ export default function Jobs() {
 							setFilterCompany("");
 							setFilterTitle("");
 							setViewFilter("to_apply");
+							setPage(1);
 						}}
 					>
 						Reset
@@ -640,7 +699,7 @@ export default function Jobs() {
 				) : (
 					<AgGridReact
 						theme={gridTheme}
-						rowData={filteredJobs}
+						rowData={jobs}
 						columnDefs={colDefs}
 						suppressCellFocus
 						getRowId={(params) => params.data.id}
@@ -654,10 +713,38 @@ export default function Jobs() {
 							enableClickSelection: false,
 						}}
 						onSelectionChanged={(e) => setSelectedIds(e.api.getSelectedRows().map((r) => r.id))}
-						defaultColDef={{ resizable: true }}
-						initialState={{ sort: { sortModel: [{ colId: "fetchedAt", sort: "desc" }] } }}
+						onSortChanged={handleSortChanged}
+						defaultColDef={{ resizable: true, sortable: false }}
 					/>
 				)}
+			</div>
+
+			{/* Pagination */}
+			<div className="flex items-center justify-between gap-3 px-6 py-2.5 border-t border-zinc-100 shrink-0 bg-zinc-50/40">
+				<span className="text-[12px] text-zinc-500 tabular-nums">
+					{total} {total === 1 ? "job" : "jobs"}
+				</span>
+				<div className="flex items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={page <= 1}
+						onClick={() => setPage((p) => Math.max(1, p - 1))}
+					>
+						◀ Prev
+					</Button>
+					<span className="text-[12px] text-zinc-600 tabular-nums">
+						Page {page} of {totalPages}
+					</span>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={page >= totalPages}
+						onClick={() => setPage((p) => p + 1)}
+					>
+						Next ▶
+					</Button>
+				</div>
 			</div>
 		</div>
 	);

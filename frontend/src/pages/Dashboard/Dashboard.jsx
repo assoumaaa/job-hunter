@@ -1,7 +1,7 @@
 import { Briefcase, MessageSquare, Send, Sparkles, Target, Zap } from "lucide-react";
 import { JobRow, MetricCard, ProgressRing } from "./DashboardWidgets";
 import { useCallApi } from "services";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useUser } from "@clerk/clerk-react";
 
 import { CardSkeleton } from "components/ui/skeleton";
@@ -14,45 +14,47 @@ const TABS = [
 	{ key: "all",       label: "All"            },
 ];
 
+const EMPTY_STATS = { total: 0, toApply: 0, applied: 0, interviews: 0, unscreened: 0, avgAts: null };
+
+// Active tab → the matching aggregate count from /jobs/stats.
+const TAB_COUNT = {
+	to_apply:  (s) => s.toApply,
+	applied:   (s) => s.applied,
+	interview: (s) => s.interviews,
+	all:       (s) => s.total,
+};
+
 export default function Dashboard() {
+	const [stats, setStats] = useState(EMPTY_STATS);
 	const [jobs, setJobs] = useState([]);
 	const [firstLoad, setFirstLoad] = useState(true);
 	const [tab, setTab] = useState("to_apply");
 	const [callApi] = useCallApi();
 	const { user } = useUser();
 
+	// KPI numbers come from the aggregate stats endpoint, not a full list fetch.
+	useEffect(() => {
+		callApi("/jobs/stats", {
+			error: "Failed to load stats",
+			onSuccess: (s) => setStats(s ?? EMPTY_STATS),
+		});
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+	// The tabbed list shows just a small page for the active tab.
 	useEffect(() => {
 		callApi("/jobs", {
+			params: { view: tab, page: 1, pageSize: 8 },
 			error: "Failed to load jobs",
-			onSuccess: (data) => {
-				setJobs(data);
+			onSuccess: (res) => {
+				setJobs(res.items ?? []);
 				setFirstLoad(false);
 			},
 			onError: () => setFirstLoad(false),
 		});
-	}, []);
-
-	const metrics = useMemo(() => {
-		const toApply = jobs.filter(j =>
-			(j.relevanceStatus === "good_fit" || j.relevanceStatus === "maybe") && j.applicationStatus !== "applied"
-		);
-		const applied    = jobs.filter(j => j.applicationStatus === "applied");
-		const interviews = jobs.filter(j => j.applicationStatus === "interview");
-		const scored     = jobs.filter(j => j.atsScore != null);
-		const avgAts     = scored.length ? Math.round(scored.reduce((s, j) => s + j.atsScore, 0) / scored.length) : null;
-		return { toApply: toApply.length, applied: applied.length, interviews: interviews.length, avgAts };
-	}, [jobs]);
-
-	const visibleJobs = useMemo(() => {
-		if (tab === "to_apply")  return jobs.filter(j =>
-			(j.relevanceStatus === "good_fit" || j.relevanceStatus === "maybe") && j.applicationStatus !== "applied"
-		);
-		if (tab === "applied")   return jobs.filter(j => j.applicationStatus === "applied");
-		if (tab === "interview") return jobs.filter(j => j.applicationStatus === "interview");
-		return jobs;
-	}, [jobs, tab]);
+	}, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	const firstName = user?.firstName || (user?.fullName?.split(" ")[0]) || "there";
+	const tabCount = (TAB_COUNT[tab] ?? (() => 0))(stats);
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
@@ -85,30 +87,30 @@ export default function Dashboard() {
 							<div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
 								<MetricCard
 									label="Ready"
-									value={metrics.toApply}
+									value={stats.toApply}
 									Icon={Zap}
 									accent
-									sub={metrics.toApply > 0 ? "Curated picks for you" : "All caught up"}
+									sub={stats.toApply > 0 ? "Curated picks for you" : "All caught up"}
 								/>
 								<MetricCard
 									label="Applied"
-									value={metrics.applied}
+									value={stats.applied}
 									Icon={Send}
-									sub={`${metrics.interviews} converted to interviews`}
+									sub={`${stats.interviews} converted to interviews`}
 								/>
 								<MetricCard
 									label="Interviews"
-									value={metrics.interviews}
+									value={stats.interviews}
 									Icon={MessageSquare}
-									sub={metrics.interviews === 0 ? "Keep applying" : "Great momentum"}
+									sub={stats.interviews === 0 ? "Keep applying" : "Great momentum"}
 								/>
 								<MetricCard
 									label="Avg ATS"
-									value={metrics.avgAts != null ? `${metrics.avgAts}%` : "—"}
+									value={stats.avgAts != null ? `${stats.avgAts}%` : "—"}
 									Icon={Target}
-									sub={metrics.avgAts >= 80 ? "Above benchmark" : "Room to optimize"}
+									sub={stats.avgAts >= 80 ? "Above benchmark" : "Room to optimize"}
 								/>
-								<ProgressRing applied={metrics.applied} goal={10} />
+								<ProgressRing applied={stats.applied} goal={10} />
 							</div>
 
 							{/* Tabbed list */}
@@ -130,12 +132,12 @@ export default function Dashboard() {
 										);
 									})}
 									<span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
-										{visibleJobs.length} {visibleJobs.length === 1 ? "job" : "jobs"}
+										{tabCount} {tabCount === 1 ? "job" : "jobs"}
 									</span>
 								</div>
 
 								<div className="flex flex-col gap-2">
-									{visibleJobs.length === 0 ? (
+									{jobs.length === 0 ? (
 										<EmptyState
 											icon={Sparkles}
 											title="Nothing here yet"
@@ -146,7 +148,7 @@ export default function Dashboard() {
 											}
 										/>
 									) : (
-										visibleJobs.map(job => <JobRow key={job.id} job={job} />)
+										jobs.map(job => <JobRow key={job.id} job={job} />)
 									)}
 								</div>
 							</section>

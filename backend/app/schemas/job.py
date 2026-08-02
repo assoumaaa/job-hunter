@@ -70,6 +70,25 @@ class JobListItem(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobPage(BaseModel):
+    """One page of the jobs list — the server does the filtering/sorting/paging."""
+
+    items: list[JobListItem]
+    total: int
+
+
+class JobStats(BaseModel):
+    """Aggregate counts across ALL of a user's jobs (the list is paginated, so
+    these can't be derived client-side)."""
+
+    total: int
+    toApply: int
+    applied: int
+    interviews: int
+    unscreened: int
+    avgAts: int | None = None
+
+
 class TweakRequest(BaseModel):
     target: str  # "cv" | "cl"
     prompt: str

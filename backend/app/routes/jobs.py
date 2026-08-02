@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.auth import get_current_user
@@ -16,6 +17,8 @@ from ..schemas.job import (
     JobDeleteRequest,
     JobListItem,
     JobOut,
+    JobPage,
+    JobStats,
     JobUpdateRequest,
     ManualJobRequest,
     ScreenRequest,
@@ -37,9 +40,48 @@ def _get_job(db: Session, job_id: str, current_user: User) -> Job:
     return job
 
 
-@router.get("", response_model=list[JobListItem])
+def _job_filters(user: User, company: str, title: str, view: str) -> list:
+    """Translate the list's UI filters into SQL conditions (shared by the page
+    query and its total count)."""
+    conds = [Job.userId == user.id]
+    if company:
+        conds.append(Job.company.ilike(f"%{company}%"))
+    if title:
+        conds.append(Job.title.ilike(f"%{title}%"))
+    if view == "to_apply":
+        conds += [Job.relevanceStatus.in_(["good_fit", "maybe"]), Job.applicationStatus == "new"]
+    elif view == "applied":
+        conds.append(Job.applicationStatus == "applied")
+    elif view == "interview":
+        conds.append(Job.applicationStatus == "interview")
+    elif view == "rejected":
+        conds.append(Job.applicationStatus == "rejected")
+    elif view == "no_fit":
+        conds.append(Job.relevanceStatus == "irrelevant")
+    # "all" (or anything else): no extra filter
+    return conds
+
+
+_SORT_COLUMNS = {
+    "fetchedAt": Job.fetchedAt,
+    "atsScore": Job.atsScore,
+    "applicationDate": Job.applicationDate,
+    "company": Job.company,
+    "title": Job.title,
+}
+
+
+@router.get("", response_model=JobPage)
 def get_jobs(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    company: str = Query(""),
+    title: str = Query(""),
+    view: str = Query("all"),
+    sort: str = Query("fetchedAt"),
+    direction: str = Query("desc"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     # Fix jobs stuck generating that already have a CV; only commit if changed.
     fixed = (
@@ -53,6 +95,12 @@ def get_jobs(
     )
     if fixed:
         db.commit()
+
+    conds = _job_filters(current_user, company.strip(), title.strip(), view)
+    total = db.query(func.count(Job.id)).filter(*conds).scalar() or 0
+
+    sort_col = _SORT_COLUMNS.get(sort, Job.fetchedAt)
+    order = sort_col.asc() if direction == "asc" else sort_col.desc()
 
     # Light columns + has-doc flags only; keep the heavy text out of list loads.
     has_cv = Job.generatedCv.isnot(None).label("hasGeneratedCv")
@@ -73,11 +121,46 @@ def get_jobs(
     ]
     rows = (
         db.query(*light_cols, has_cv, has_cl)
-        .filter(Job.userId == current_user.id)
-        .order_by(Job.fetchedAt.desc())
+        .filter(*conds)
+        .order_by(order, Job.id.desc())  # id tiebreaker → stable paging
+        .offset((page - 1) * pageSize)
+        .limit(pageSize)
         .all()
     )
-    return [JobListItem.model_validate(dict(row._mapping)) for row in rows]
+    items = [JobListItem.model_validate(dict(row._mapping)) for row in rows]
+    return {"items": items, "total": total}
+
+
+@router.get("/stats", response_model=JobStats)
+def get_job_stats(
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    """Aggregate counts across all of the user's jobs — the list is paginated, so
+    the toolbar/dashboard totals come from here, not the page."""
+
+    def count(*extra) -> int:
+        return (
+            db.query(func.count(Job.id))
+            .filter(Job.userId == current_user.id, *extra)
+            .scalar()
+            or 0
+        )
+
+    avg = (
+        db.query(func.avg(Job.atsScore))
+        .filter(Job.userId == current_user.id, Job.atsScore.isnot(None))
+        .scalar()
+    )
+    return JobStats(
+        total=count(),
+        toApply=count(
+            Job.relevanceStatus.in_(["good_fit", "maybe"]), Job.applicationStatus == "new"
+        ),
+        applied=count(Job.applicationStatus == "applied"),
+        interviews=count(Job.applicationStatus == "interview"),
+        unscreened=count(Job.relevanceStatus == "unscreened"),
+        avgAts=round(avg) if avg is not None else None,
+    )
 
 
 @router.get("/{job_id}", response_model=JobOut)
