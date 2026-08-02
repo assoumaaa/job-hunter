@@ -37,6 +37,8 @@ The brand layer is created and the visual debt paid down.
 3. Real, loaded typography (Geist + Geist Mono, self-hosted).
 4. Full dark mode (system / light / dark, persisted, no flash).
 5. Dead visual code removed.
+6. Keyboard and screen-reader usability: every flow completes without a mouse,
+   every control has a name, role, and state (per the 2026-08-03 a11y review).
 
 ## Non-goals
 
@@ -151,21 +153,68 @@ Token pass over every surface, preserving layout and density:
 - Metadata: title "Kestrel", meta description, OG/twitter card + static
   1200x630 OG image, regenerated `favicon.svg`, apple-touch-icon.
 
-## 5. Cleanup
+## 5. Accessibility remediation (same pass, same files)
+
+Folded into the redesign because the findings live in the components being
+rewritten anyway. Source: full a11y review, 2026-08-03.
+
+**Primitives (highest leverage, fixes every call site):**
+
+- `input.jsx` / textarea / `select.jsx` accept `label` + `id` and render an
+  associated `<label htmlFor>` (pattern already correct in `AddJobDialog.jsx:16`).
+  Placeholder is never the only name. Add `autocomplete` where meaningful
+  (name, email, organization). `button.jsx` gets default `type="button"`.
+- Focus rings: `focus-visible` only, 2px accent ring + offset (the near-invisible
+  `ring-zinc-900/5` recipes go away). Verified against canvas and surface in both
+  modes; forced-colors left to system defaults.
+- `modal.jsx`: `role="dialog"`, `aria-modal`, `aria-labelledby` on the title,
+  focus moved in on open and restored to the trigger on close, `inert` on the
+  app root behind, Esc closes, `overscroll-behavior: contain`.
+- `portal-menu.jsx` (StatusChip, Jobs row menus): APG menu-button pattern.
+  Trigger gets `aria-haspopup` + `aria-expanded`; on open focus moves into
+  `role="menu"`, arrow keys + Home/End move, Esc closes and returns focus.
+- `select.jsx`: APG listbox semantics on the popup (`role="listbox"` /
+  `role="option"`, `aria-selected`, arrow keys), same open/close focus contract
+  as the menu.
+- Icon-only buttons everywhere get `aria-label` ("Close", "Remove {item}"),
+  icons `aria-hidden`. Small remove-chips get their hit area extended to a
+  minimum of 24px (aim 40px) via pseudo-element, without overlap.
+
+**Widgets and pages:**
+
+- `UploadZone.jsx`: native-first rebuild; a `<label>` wraps a visually-hidden
+  but focusable file input (not `display:none`), so keyboard and SR users can
+  upload.
+- Tab strips (Dashboard, CV, TweakJob): `role="tablist"` / `role="tab"` /
+  `aria-selected` + roving tabindex, linked `role="tabpanel"`.
+- Pill selectors (Profile, Positions): multi-select sets use `aria-pressed`;
+  single-select sets use the radiogroup pattern. Color cue stays, state is
+  exposed.
+- Skip link: first focusable element, targets `#main`.
+- Live regions: stable, initially-empty `role="status"` regions that get their
+  text updated (reliable repeated announcements). Toasts: `role="status"`,
+  errors `role="alert"` (verify what notistack already provides before adding).
+  TweakJob chat transcript: `role="log"` + `aria-live="polite"`. Save buttons
+  and full-page loads announce via sr-only status ("Saving", "Saved", "Loading").
+- Reduced motion: shimmer/pulse/spin wrapped in
+  `@media (prefers-reduced-motion: no-preference)` (already a brand-motion rule).
+
+## 6. Cleanup
 
 Delete: `pages/Login/*` (unrouted), `services/Auth/AuthProvider.jsx` (dead),
 `services/Theme/theme.js` (orphaned MUI). Remove `radix-ui` dep after verifying
-zero imports. Root README rewritten for the actual product (Vite SPA, FastAPI
+zero imports. Deleting `pages/Login/*` also resolves the latent a11y findings
+there (invalid `label` attribute forwarded to the DOM). Root README rewritten for the actual product (Vite SPA, FastAPI
 backend, self-deploy pointer to `docs/deployment/DEPLOY.md`).
 
-## 6. Deliverables
+## 7. Deliverables
 
 1. `docs/brand.md`: palette, type scale, radius/elevation rules, accent and
    status-color usage, mark usage, do/don't.
 2. Applied redesign across all surfaces, both modes.
 3. Updated metadata/favicon/OG, rewritten README.
 
-## 7. Verification
+## 8. Verification
 
 - Build passes; app boots in dev and Docker single-container mode.
 - Both modes visually reviewed on every route; no flash-of-wrong-theme on reload.
@@ -174,3 +223,8 @@ backend, self-deploy pointer to `docs/deployment/DEPLOY.md`).
 - Grep gates: no `indigo-`/`violet-` utilities left outside status tokens; no
   stray `text-[Npx]` outside the scale; no `#4f46e5`.
 - ag-grid renders correctly in both modes (row hover, header, selection).
+- Accessibility: axe (or Lighthouse a11y) pass on every route; keyboard-only
+  walkthrough of the core flows (add job, change status via menu, upload CV,
+  edit CV sections, tweak chat, change settings); VoiceOver spot-check of forms,
+  modal, menus, and toasts; confirm notistack's live-region behavior; confirm
+  `suppressCellFocus` on the jobs grid does not strand in-cell controls.
