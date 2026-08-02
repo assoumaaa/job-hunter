@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kestrel
 
-## Getting Started
+Kestrel is a job search workspace. It fetches openings from LinkedIn, screens
+them against your profile with Claude, tailors your CV and cover letter to
+each posting, and tracks every application from first fetch to offer.
 
-First, run the development server:
+## How it's built
+
+- **Frontend** (`frontend/`): Vite + React SPA. Tailwind v4 with the Kestrel
+  design tokens (`src/App.css`, guideline in `docs/brand.md`), Geist type,
+  light and dark themes, ag-grid for the jobs table, Clerk for auth.
+- **Backend** (`backend/`): FastAPI + SQLAlchemy. Claude handles screening,
+  generation, and CV parsing; WeasyPrint renders the recruiter-facing PDFs
+  in-process (CMU Serif, deliberately separate from the app's visual system);
+  Apify powers LinkedIn scraping.
+
+## Run it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Frontend dev server + API together (from frontend/)
+cd frontend
+bun install
+bun run dev        # vite on :5173, uvicorn on :8000
+
+# Backend alone (from backend/)
+poetry install
+poetry run uvicorn app.main:app --reload --port 8000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Per-user API keys (Anthropic, Apify) and model choices live in the app's
+Settings page, encrypted at rest.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Single-container image: bun builds the SPA, FastAPI serves it with the API
+under `/api`. See `docs/deployment/DEPLOY.md`.
