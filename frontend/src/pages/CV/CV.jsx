@@ -2,24 +2,19 @@ import {
 	Award,
 	Briefcase,
 	CheckCircle2,
-	ChevronsRight,
 	FileDown,
 	FileText,
 	FolderGit2,
 	GraduationCap,
 	Languages,
-	PanelRightClose,
-	PanelRightOpen,
 	Save,
 	Sparkles,
 	User,
 	Wrench,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import CvEditor from "./CvEditor";
-import CvPreview from "./CvPreview";
-import SectionRail from "./SectionRail";
 import { EMPTY_CV, normalizeCv, serializeForSave } from "./cvData";
 import { Button } from "components/ui/button";
 import { FormSkeleton } from "components/ui/skeleton";
@@ -28,16 +23,6 @@ import { PageHeader } from "components/ui/page-header";
 import { useAuth } from "@clerk/clerk-react";
 import { useCallApi } from "services";
 import { useSnackbar } from "notistack";
-
-// Keep the live preview a step behind the keystrokes so typing stays snappy.
-function useDebounced(value, delay = 250) {
-	const [v, setV] = useState(value);
-	useEffect(() => {
-		const t = setTimeout(() => setV(value), delay);
-		return () => clearTimeout(t);
-	}, [value, delay]);
-	return v;
-}
 
 export default function CV() {
 	const [cv, setCv] = useState(EMPTY_CV);
@@ -49,54 +34,12 @@ export default function CV() {
 	const [uploading, setUploading] = useState(false);
 	const [hasData, setHasData] = useState(false);
 	const [firstLoad, setFirstLoad] = useState(true);
-	const [showPreview, setShowPreview] = useState(true);
 	const [activeSection, setActiveSection] = useState("contact");
 
 	const [callApi] = useCallApi();
 	const { getToken } = useAuth();
 	const { enqueueSnackbar } = useSnackbar();
 
-	const debouncedCv = useDebounced(cv, 250);
-
-	// --- Scroll-spy: rail highlights whichever section is in view; clicking a
-	// rail item scrolls the editor to it. -----------------------------------
-	const editorRef = useRef(null);
-	const nodesRef = useRef({});
-	const refCbs = useRef({});
-	const register = useCallback((id) => {
-		if (!refCbs.current[id]) {
-			refCbs.current[id] = (node) => {
-				if (node) nodesRef.current[id] = node;
-				else delete nodesRef.current[id];
-			};
-		}
-		return refCbs.current[id];
-	}, []);
-
-	const jump = useCallback((id) => {
-		nodesRef.current[id]?.scrollIntoView({ behavior: "smooth", block: "start" });
-		setActiveSection(id);
-	}, []);
-
-	useEffect(() => {
-		if (firstLoad) return;
-		const root = editorRef.current;
-		const nodes = Object.values(nodesRef.current);
-		if (!root || !nodes.length) return;
-		const obs = new IntersectionObserver(
-			(entries) => {
-				const visible = entries
-					.filter((e) => e.isIntersecting)
-					.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-				if (visible[0]) setActiveSection(visible[0].target.dataset.sectionId);
-			},
-			{ root, rootMargin: "0px 0px -65% 0px", threshold: 0 },
-		);
-		nodes.forEach((n) => obs.observe(n));
-		return () => obs.disconnect();
-	}, [firstLoad]);
-
-	// --- Load ---------------------------------------------------------------
 	useEffect(() => {
 		callApi("/cv", {
 			onSuccess: (d) => {
@@ -112,7 +55,6 @@ export default function CV() {
 		});
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-	// --- Save / upload / compile -------------------------------------------
 	const save = async () => {
 		setSaving(true);
 		await callApi("/cv", { method: "post", json: { structuredData: serializeForSave(cv) }, success: "CV saved" });
@@ -196,19 +138,6 @@ export default function CV() {
 				subtitle="Upload a PDF or edit sections inline"
 				actions={
 					<>
-						<Button
-							variant="ghost"
-							size="sm"
-							onClick={() => setShowPreview((s) => !s)}
-							className="hidden lg:inline-flex"
-						>
-							{showPreview ? (
-								<PanelRightClose className="h-3.5 w-3.5" />
-							) : (
-								<PanelRightOpen className="h-3.5 w-3.5" />
-							)}
-							{showPreview ? "Hide preview" : "Show preview"}
-						</Button>
 						<Button variant="outline" size="sm" onClick={save} disabled={saving}>
 							{saved ? (
 								<CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
@@ -225,43 +154,50 @@ export default function CV() {
 				}
 			/>
 
-			<div className="flex min-h-0 flex-1">
-				<SectionRail sections={sections} activeId={activeSection} onJump={jump} />
+			{/* Section tabs */}
+			<div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-100 px-4 sm:px-6">
+				{sections.map((s) => {
+					const Icon = s.icon;
+					const active = activeSection === s.id;
+					return (
+						<button
+							key={s.id}
+							type="button"
+							onClick={() => setActiveSection(s.id)}
+							className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
+								active ? "border-violet-500 text-violet-700" : "border-transparent text-zinc-500 hover:text-zinc-800"
+							}`}
+						>
+							<Icon className="h-3.5 w-3.5" />
+							{s.label}
+							{s.count != null && (
+								<span
+									className={`ml-0.5 rounded-full px-1.5 text-[11px] leading-5 ${
+										active ? "bg-violet-100 text-violet-700" : "bg-zinc-100 text-zinc-500"
+									}`}
+								>
+									{s.count}
+								</span>
+							)}
+						</button>
+					);
+				})}
+			</div>
 
-				<div ref={editorRef} className="min-w-0 flex-1 overflow-y-auto">
-					<div className="mx-auto w-full max-w-[860px] p-4 sm:p-5">
-						{firstLoad ? (
-							<FormSkeleton fields={6} />
-						) : (
-							<CvEditor
-								cv={cv}
-								setCv={setCv}
-								uploading={uploading}
-								onUpload={handleUpload}
-								register={register}
-							/>
-						)}
-					</div>
+			<div className="min-h-0 flex-1 overflow-y-auto">
+				<div className="mx-auto w-full max-w-[860px] p-4 sm:p-6">
+					{firstLoad ? (
+						<FormSkeleton fields={6} />
+					) : (
+						<CvEditor
+							cv={cv}
+							setCv={setCv}
+							uploading={uploading}
+							onUpload={handleUpload}
+							activeSection={activeSection}
+						/>
+					)}
 				</div>
-
-				{showPreview && (
-					<aside className="hidden lg:flex w-[440px] shrink-0 flex-col border-l border-zinc-100 bg-zinc-50">
-						<div className="flex h-11 shrink-0 items-center gap-2 border-b border-zinc-100 bg-white/60 px-4">
-							<span className="text-[12px] font-semibold text-zinc-700">Live preview</span>
-							<span className="text-[11px] text-zinc-400">approximation</span>
-							<button
-								onClick={() => setShowPreview(false)}
-								title="Hide preview"
-								className="ml-auto flex h-7 w-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700"
-							>
-								<ChevronsRight className="h-4 w-4" />
-							</button>
-						</div>
-						<div className="flex-1 overflow-y-auto p-4">
-							<CvPreview cv={debouncedCv} />
-						</div>
-					</aside>
-				)}
 			</div>
 
 			<Modal open={pdfOpen} onClose={() => setPdfOpen(false)} title="Résumé PDF" icon={FileText} width={900}>
