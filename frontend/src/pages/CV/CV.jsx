@@ -129,22 +129,40 @@ export default function CV() {
 		{ id: "languages", label: "Languages", icon: Languages, count: cv.languages.length },
 	];
 
+	// APG tabs: arrows move focus and selection together.
+	const onTabKeyDown = (e) => {
+		const idx = sections.findIndex((s) => s.id === activeSection);
+		let next = null;
+		if (e.key === "ArrowRight") next = sections[(idx + 1) % sections.length];
+		if (e.key === "ArrowLeft") next = sections[(idx - 1 + sections.length) % sections.length];
+		if (e.key === "Home") next = sections[0];
+		if (e.key === "End") next = sections[sections.length - 1];
+		if (next) {
+			e.preventDefault();
+			setActiveSection(next.id);
+			document.getElementById(`cv-tab-${next.id}`)?.focus();
+		}
+	};
+
 	return (
 		<div className="flex h-full flex-col overflow-hidden">
+			<span role="status" className="sr-only">
+				{saving ? "Saving" : saved ? "Saved" : ""}
+			</span>
 			<PageHeader
 				title="My CV"
 				actions={
 					<>
 						<Button variant="outline" size="sm" onClick={save} disabled={saving}>
 							{saved ? (
-								<CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+								<CheckCircle2 className="h-3.5 w-3.5 text-st-ok-fg" aria-hidden="true" />
 							) : (
-								<Save className="h-3.5 w-3.5" />
+								<Save className="h-3.5 w-3.5" aria-hidden="true" />
 							)}
 							{saved ? "Saved" : saving ? "Saving…" : "Save"}
 						</Button>
 						<Button variant="primary" size="sm" onClick={compile} disabled={compiling || !hasData}>
-							<FileDown className="h-3.5 w-3.5" />
+							<FileDown className="h-3.5 w-3.5" aria-hidden="true" />
 							{compiling ? "Generating…" : "Preview PDF"}
 						</Button>
 					</>
@@ -153,7 +171,9 @@ export default function CV() {
 
 			{/* Section tabs */}
 			<div
-				className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-zinc-100 px-4 sm:px-6 [&::-webkit-scrollbar]:hidden"
+				role="tablist"
+				aria-label="CV sections"
+				className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-4 sm:px-6 [&::-webkit-scrollbar]:hidden"
 				style={{ scrollbarWidth: "none" }}
 			>
 				{sections.map((s) => {
@@ -162,20 +182,26 @@ export default function CV() {
 					return (
 						<button
 							key={s.id}
+							id={`cv-tab-${s.id}`}
 							type="button"
+							role="tab"
+							aria-selected={active}
+							aria-controls="cv-tabpanel"
+							tabIndex={active ? 0 : -1}
 							onClick={() => setActiveSection(s.id)}
-							className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
+							onKeyDown={onTabKeyDown}
+							className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-body font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2 ${
 								active
-									? "border-violet-500 text-violet-700"
-									: "border-transparent text-zinc-500 hover:text-zinc-800"
+									? "border-accent text-accent-text"
+									: "border-transparent text-ink-2 hover:text-ink"
 							}`}
 						>
-							<Icon className="h-3.5 w-3.5" />
+							<Icon className="h-3.5 w-3.5" aria-hidden="true" />
 							{s.label}
 							{s.count != null && (
 								<span
-									className={`ml-0.5 rounded-full px-1.5 text-[11px] leading-5 ${
-										active ? "bg-violet-100 text-violet-700" : "bg-zinc-100 text-zinc-500"
+									className={`ml-0.5 rounded-full px-1.5 text-micro leading-5 font-mono tabular-nums ${
+										active ? "bg-accent-soft text-accent-text" : "bg-muted text-ink-2"
 									}`}
 								>
 									{s.count}
@@ -187,7 +213,12 @@ export default function CV() {
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-y-auto">
-				<div className="mx-auto w-full max-w-[860px] p-4 sm:p-6">
+				<div
+					id="cv-tabpanel"
+					role="tabpanel"
+					aria-labelledby={`cv-tab-${activeSection}`}
+					className="mx-auto w-full max-w-[860px] p-4 sm:p-6"
+				>
 					{firstLoad ? (
 						<FormSkeleton fields={6} />
 					) : (
@@ -202,11 +233,11 @@ export default function CV() {
 				</div>
 			</div>
 
-			<Modal open={pdfOpen} onClose={() => setPdfOpen(false)} title="Résumé PDF" icon={FileText} width={900}>
+			<Modal open={pdfOpen} onClose={() => setPdfOpen(false)} title="CV preview" icon={FileText} width={900}>
 				{pdfUrl ? (
-					<iframe src={pdfUrl} title="CV PDF" className="h-[76vh] w-full rounded-lg border border-zinc-200" />
+					<iframe src={pdfUrl} title="CV PDF" className="h-[76vh] w-full rounded-lg border border-line" />
 				) : (
-					<div className="flex h-[76vh] items-center justify-center text-[13px] text-zinc-400">
+					<div className="flex h-[76vh] items-center justify-center text-body text-ink-3">
 						No PDF generated yet.
 					</div>
 				)}

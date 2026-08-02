@@ -19,9 +19,9 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 		contact: (
 			<Section bare icon={User} title="Contact information">
 				<div className="grid grid-cols-2 gap-3">
-					<Field label="Full name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="John Doe" />
-					<Field label="Email" value={cv.header.email} onChange={(v) => updateHeader("email", v)} placeholder="john@example.com" />
-					<Field label="Phone" value={cv.header.phone} onChange={(v) => updateHeader("phone", v)} placeholder="+1 555 000 0000" />
+					<Field label="Full name" value={cv.header.name} onChange={(v) => updateHeader("name", v)} placeholder="Your full name" />
+					<Field label="Email" value={cv.header.email} onChange={(v) => updateHeader("email", v)} placeholder="you@example.com" />
+					<Field label="Phone" value={cv.header.phone} onChange={(v) => updateHeader("phone", v)} placeholder="+971 50 481 2937" />
 					<Field label="Location" value={cv.header.location} onChange={(v) => updateHeader("location", v)} placeholder="Berlin, Germany" />
 					<Field label="LinkedIn URL" value={cv.header.linkedin} onChange={(v) => updateHeader("linkedin", v)} placeholder="https://linkedin.com/in/…" />
 					<Field label="GitHub URL" value={cv.header.github} onChange={(v) => updateHeader("github", v)} placeholder="https://github.com/…" />
@@ -35,7 +35,8 @@ export default function CvEditor({ cv, setCv, uploading, onUpload, activeSection
 					value={cv.summary}
 					onChange={(e) => setCv((p) => ({ ...p, summary: e.target.value }))}
 					minRows={3}
-					placeholder="Brief professional summary (2–3 sentences)…"
+					aria-label="Professional summary"
+					placeholder="Brief professional summary (2-3 sentences)…"
 				/>
 			</Section>
 		),

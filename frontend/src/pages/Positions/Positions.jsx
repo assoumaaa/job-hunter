@@ -17,20 +17,20 @@ const JOB_TYPES = [
 ];
 
 const pillCls = (active) =>
-	`px-3 h-7 rounded-full text-[12px] font-medium border transition-colors cursor-pointer ${
+	`px-3 h-7 rounded-full text-label font-medium border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
 		active
-			? "bg-zinc-900 text-white border-zinc-900"
-			: "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-400 hover:text-zinc-900"
+			? "bg-ink text-canvas border-transparent"
+			: "bg-surface border-line text-ink-2 hover:border-line-strong hover:text-ink"
 	}`;
 
 function SectionCard({ title, description, action, children, padding = "p-5" }) {
 	return (
-		<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] overflow-hidden">
+		<div className="bg-surface border border-line rounded-xl shadow-raised overflow-hidden">
 			{(title || action) && (
-				<div className="px-5 py-4 border-b border-zinc-100 flex items-center justify-between gap-4">
+				<div className="px-5 py-4 border-b border-line flex items-center justify-between gap-4">
 					<div>
-						{title && <p className="text-[13px] font-semibold text-zinc-900">{title}</p>}
-						{description && <p className="text-[11.5px] text-zinc-400 mt-0.5">{description}</p>}
+						{title && <p className="text-body font-semibold text-ink">{title}</p>}
+						{description && <p className="text-micro text-ink-3 mt-0.5">{description}</p>}
 					</div>
 					{action}
 				</div>
@@ -118,12 +118,15 @@ export default function Positions() {
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
+			<span role="status" className="sr-only">
+				{saving ? "Saving" : saved ? "Saved" : ""}
+			</span>
 			<PageHeader
 				title="Targeting"
 				subtitle="What to search for and where"
 				actions={
 					<Button variant="primary" size="sm" onClick={saveSettings} disabled={saving}>
-						{saved ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+						{saved ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
 						{saved ? "Saved" : saving ? "Saving…" : "Save"}
 					</Button>
 				}
@@ -140,10 +143,15 @@ export default function Positions() {
 						{positions.length > 0 && (
 							<div className="flex flex-wrap gap-1.5 mb-3">
 								{positions.map((p) => (
-									<div key={p.id} className="inline-flex items-center gap-1.5 bg-zinc-100 rounded-full px-3 py-1 text-[12px] font-medium text-zinc-800">
+									<div key={p.id} className="inline-flex items-center gap-1 bg-muted rounded-full pl-3 pr-1 py-1 text-label font-medium text-ink">
 										{p.label}
-										<button onClick={() => removePosition(p.id)} className="text-zinc-400 hover:text-red-500">
-											<X className="h-3 w-3" />
+										<button
+											type="button"
+											onClick={() => removePosition(p.id)}
+											aria-label={`Remove ${p.label}`}
+											className="h-5 w-5 rounded-full flex items-center justify-center text-ink-3 hover:text-red-500 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+										>
+											<X className="h-3 w-3" aria-hidden="true" />
 										</button>
 									</div>
 								))}
@@ -152,22 +160,24 @@ export default function Positions() {
 						<div className="flex gap-2">
 							<Input
 								placeholder="e.g. Platform Engineer"
+								aria-label="Add a job title"
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
 								onKeyDown={(e) => e.key === "Enter" && addPosition(input)}
 							/>
 							<Button variant="outline" onClick={() => addPosition(input)}>
-								<Plus className="h-4 w-4" /> Add
+								<Plus className="h-4 w-4" aria-hidden="true" /> Add
 							</Button>
 						</div>
-						<div className="flex flex-wrap gap-1.5 pt-4 mt-4 border-t border-zinc-100">
-							<span className="text-[11px] font-medium text-zinc-400 uppercase tracking-wide self-center mr-1">Suggested</span>
+						<div className="flex flex-wrap gap-1.5 pt-4 mt-4 border-t border-line">
+							<span className="text-micro font-medium text-ink-3 uppercase tracking-wide self-center mr-1">Suggested</span>
 							{SUGGESTED.map((s) => (
 								<button
 									key={s}
+									type="button"
 									onClick={() => addPosition(s)}
 									disabled={!!positions.find((p) => p.label === s)}
-									className="text-[12px] px-3 h-7 rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:border-zinc-300 disabled:opacity-40 disabled:cursor-default cursor-pointer transition-colors"
+									className="text-label px-3 h-7 rounded-full border border-line text-ink-2 hover:bg-hovertint hover:border-line-strong hover:text-ink disabled:opacity-40 disabled:cursor-default cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
 								>
 									+ {s}
 								</button>
@@ -176,9 +186,15 @@ export default function Positions() {
 					</SectionCard>
 
 					<SectionCard title="Job type" description="Employment types to include">
-						<div className="flex gap-1.5 flex-wrap">
+						<div className="flex gap-1.5 flex-wrap" role="group" aria-label="Job types">
 							{JOB_TYPES.map(({ value, label }) => (
-								<button key={value} onClick={() => toggleJobType(value)} className={pillCls(selectedJobTypes.includes(value))}>
+								<button
+									key={value}
+									type="button"
+									aria-pressed={selectedJobTypes.includes(value)}
+									onClick={() => toggleJobType(value)}
+									className={pillCls(selectedJobTypes.includes(value))}
+								>
 									{label}
 								</button>
 							))}
@@ -191,10 +207,15 @@ export default function Positions() {
 								{selectedCountries.map((code) => {
 									const c = COUNTRIES.find((x) => x.code === code);
 									return (
-										<div key={code} className="inline-flex items-center gap-1.5 bg-zinc-100 text-zinc-800 rounded-full px-3 py-1 text-[12px] font-medium">
+										<div key={code} className="inline-flex items-center gap-1 bg-muted text-ink rounded-full pl-3 pr-1 py-1 text-label font-medium">
 											{c?.name ?? code}
-											<button onClick={() => toggleCountry(code)} className="text-zinc-400 hover:text-red-500">
-												<X className="h-3 w-3" />
+											<button
+												type="button"
+												onClick={() => toggleCountry(code)}
+												aria-label={`Remove ${c?.name ?? code}`}
+												className="h-5 w-5 rounded-full flex items-center justify-center text-ink-3 hover:text-red-500 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+											>
+												<X className="h-3 w-3" aria-hidden="true" />
 											</button>
 										</div>
 									);
@@ -202,7 +223,8 @@ export default function Positions() {
 							</div>
 						)}
 						<select
-							className="h-9 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-700 max-w-xs cursor-pointer hover:border-zinc-300 focus:outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/5"
+							aria-label="Add country"
+							className="h-9 rounded-lg border border-line bg-surface px-3 text-body text-ink max-w-xs cursor-pointer hover:border-line-strong focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-0"
 							value=""
 							onChange={(e) => { if (e.target.value) toggleCountry(e.target.value); }}
 						>
@@ -224,10 +246,15 @@ export default function Positions() {
 						{keywords.length > 0 && (
 							<div className="flex flex-wrap gap-1.5 mb-3">
 								{keywords.map((kw) => (
-									<div key={kw} className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 rounded-full px-3 py-1 text-[12px] font-medium ring-1 ring-inset ring-indigo-200/60">
+									<div key={kw} className="inline-flex items-center gap-1 bg-accent-soft text-accent-text rounded-full pl-3 pr-1 py-1 text-label font-medium">
 										{kw}
-										<button onClick={() => setKeywords((prev) => prev.filter((k) => k !== kw))} className="text-indigo-400 hover:text-red-500">
-											<X className="h-3 w-3" />
+										<button
+											type="button"
+											onClick={() => setKeywords((prev) => prev.filter((k) => k !== kw))}
+											aria-label={`Remove ${kw}`}
+											className="h-5 w-5 rounded-full flex items-center justify-center text-accent-text/70 hover:text-red-500 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+										>
+											<X className="h-3 w-3" aria-hidden="true" />
 										</button>
 									</div>
 								))}
@@ -237,6 +264,7 @@ export default function Positions() {
 							<Input
 								ref={kwRef}
 								value={keywordInput}
+								aria-label="Add keyword"
 								onChange={(e) => setKeywordInput(e.target.value)}
 								onKeyDown={(e) => {
 									if (e.key === "Enter" || e.key === ",") {
@@ -244,7 +272,7 @@ export default function Positions() {
 										addKeyword(keywordInput);
 									}
 								}}
-								placeholder="Python, AWS, React — press Enter"
+								placeholder="Press Enter to add"
 								className="flex-1"
 							/>
 							<Button variant="outline" onClick={() => addKeyword(keywordInput)}>Add</Button>

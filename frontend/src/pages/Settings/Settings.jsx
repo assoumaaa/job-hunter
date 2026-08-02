@@ -5,15 +5,25 @@ import { Button } from "components/ui/button";
 import { FormSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
+import { RadioPills } from "components/ui/radio-pills";
 import { Select } from "components/ui/select";
-import { useCallApi } from "services";
+import { useCallApi, useTheme } from "services";
 
-function Row({ label, description, children }) {
+const THEME_OPTIONS = [
+	{ value: "system", label: "System" },
+	{ value: "light", label: "Light" },
+	{ value: "dark", label: "Dark" },
+];
+
+function Row({ label, description, children, htmlFor }) {
+	const LabelTag = htmlFor ? "label" : "p";
 	return (
 		<div className="flex items-start justify-between px-5 py-4 gap-6">
 			<div className="min-w-[180px] max-w-[240px]">
-				<p className="text-[13px] font-medium text-zinc-900">{label}</p>
-				{description && <p className="text-[11.5px] text-zinc-400 mt-0.5 leading-relaxed">{description}</p>}
+				<LabelTag htmlFor={htmlFor} className="text-body font-medium text-ink block m-0">
+					{label}
+				</LabelTag>
+				{description && <p className="text-micro text-ink-3 mt-0.5 leading-relaxed m-0">{description}</p>}
 			</div>
 			<div className="flex-1 flex flex-col items-end gap-1.5 min-w-0">{children}</div>
 		</div>
@@ -22,24 +32,29 @@ function Row({ label, description, children }) {
 
 // A masked-key input. `value` is null when untouched (leave the saved key as-is),
 // a string when the user is entering a replacement, and "" when they've cleared it.
-function KeyField({ label, description, isSet, masked, placeholder, value, onChange, onClear }) {
+function KeyField({ id, label, description, isSet, masked, placeholder, value, onChange, onClear }) {
 	const cleared = value === "";
 	return (
-		<Row label={label} description={description}>
+		<Row label={label} description={description} htmlFor={id}>
 			<Input
+				id={id}
 				type="password"
 				autoComplete="off"
 				value={value ?? ""}
 				onChange={(e) => onChange(e.target.value)}
-				placeholder={isSet ? `Saved ${masked} — type a new key to replace` : placeholder}
+				placeholder={isSet ? `Saved ${masked}. Type a new key to replace` : placeholder}
 				className="w-full max-w-[360px]"
 			/>
 			{isSet && value == null && (
-				<button onClick={onClear} className="text-[11.5px] text-zinc-400 hover:text-red-500 cursor-pointer">
+				<button
+					type="button"
+					onClick={onClear}
+					className="text-micro text-ink-3 hover:text-red-500 cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1 rounded"
+				>
 					Clear saved key
 				</button>
 			)}
-			{cleared && <span className="text-[11.5px] text-amber-600">Saved key will be removed on save</span>}
+			{cleared && <span className="text-micro text-st-warn-fg">Saved key will be removed on save</span>}
 		</Row>
 	);
 }
@@ -62,6 +77,7 @@ export default function Settings() {
 	const [firstLoad, setFirstLoad] = useState(true);
 
 	const [callApi] = useCallApi();
+	const { pref, setPref } = useTheme();
 
 	const load = (d) => {
 		setScreeningModel(d.screeningModel ?? "");
@@ -107,12 +123,15 @@ export default function Settings() {
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
+			<span role="status" className="sr-only">
+				{saving ? "Saving" : saved ? "Saved" : ""}
+			</span>
 			<PageHeader
 				title="Settings"
-				subtitle="Your API keys and model choices — used for every screen and generation"
+				subtitle="API keys, models, and appearance"
 				actions={
 					<Button variant="primary" size="sm" onClick={save} disabled={saving}>
-						{saved ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Save className="h-3.5 w-3.5" />}
+						{saved ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <Save className="h-3.5 w-3.5" aria-hidden="true" />}
 						{saved ? "Saved" : saving ? "Saving…" : "Save"}
 					</Button>
 				}
@@ -124,11 +143,21 @@ export default function Settings() {
 						<FormSkeleton fields={4} />
 					) : (
 					<>
-					<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] divide-y divide-zinc-100">
-						<div className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+					<div className="bg-surface border border-line rounded-xl shadow-raised divide-y divide-line">
+						<div className="px-5 py-3 text-micro font-semibold uppercase tracking-wider text-ink-3">
+							Appearance
+						</div>
+						<Row label="Theme" description="Applies immediately, saved on this device">
+							<RadioPills label="Theme" options={THEME_OPTIONS} value={pref} onChange={setPref} />
+						</Row>
+					</div>
+
+					<div className="bg-surface border border-line rounded-xl shadow-raised divide-y divide-line">
+						<div className="px-5 py-3 text-micro font-semibold uppercase tracking-wider text-ink-3">
 							API keys
 						</div>
 						<KeyField
+							id="settings-anthropic-key"
 							label="Anthropic API key"
 							description="Powers screening, generation, and PDF trimming"
 							isSet={meta.anthropicKeySet}
@@ -139,6 +168,7 @@ export default function Settings() {
 							onClear={() => setAnthropicKey("")}
 						/>
 						<KeyField
+							id="settings-apify-token"
 							label="Apify token"
 							description="Powers LinkedIn job scraping"
 							isSet={meta.apifyTokenSet}
@@ -150,8 +180,8 @@ export default function Settings() {
 						/>
 					</div>
 
-					<div className="bg-white border border-zinc-200/80 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] divide-y divide-zinc-100">
-						<div className="px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
+					<div className="bg-surface border border-line rounded-xl shadow-raised divide-y divide-line">
+						<div className="px-5 py-3 text-micro font-semibold uppercase tracking-wider text-ink-3">
 							Models
 						</div>
 						<Row label="Screening model" description="Cheaper tier for bulk relevance scoring">
@@ -161,6 +191,7 @@ export default function Settings() {
 								options={modelOpts}
 								align="right"
 								placeholder="Select a model"
+								ariaLabel="Screening model"
 							/>
 						</Row>
 						<Row label="Generation model" description="Higher-quality tier for tailoring CVs & letters">
@@ -170,11 +201,12 @@ export default function Settings() {
 								options={modelOpts}
 								align="right"
 								placeholder="Select a model"
+								ariaLabel="Generation model"
 							/>
 						</Row>
 					</div>
 
-					<p className="text-[11.5px] text-zinc-400 px-1 leading-relaxed">
+					<p className="text-micro text-ink-3 px-1 leading-relaxed">
 						Keys are encrypted before they're stored and are never shown again in full. Leave a key field
 						blank to keep the one already saved.
 					</p>
