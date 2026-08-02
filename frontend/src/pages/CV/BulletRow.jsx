@@ -92,7 +92,7 @@ export default function BulletRow({ bullet, isFirst, isLast, onChange, onRemove,
 						<div className="rounded-lg border-l-2 border-l-accent bg-accent-soft/60 px-3 py-2.5">
 							<label
 								htmlFor={condId}
-								className="mb-1.5 block text-[10.5px] font-semibold uppercase tracking-wide text-accent-text"
+								className="mb-1.5 block text-micro font-semibold uppercase tracking-wide text-accent-text"
 							>
 								Show when…
 							</label>

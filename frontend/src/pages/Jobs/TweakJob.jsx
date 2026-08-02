@@ -394,21 +394,21 @@ export default function TweakJob() {
 							className="resize-none disabled:opacity-60"
 						/>
 						<div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-							<span className="text-[10.5px] text-ink-3 font-medium">Try:</span>
+							<span className="text-micro text-ink-3 font-medium">Try:</span>
 							{SUGGESTIONS[activeTab].map((s) => (
 								<button
 									key={s}
 									type="button"
 									onClick={() => setPrompt(s)}
 									disabled={tweaking}
-									className="text-[10.5px] text-ink-2 hover:text-ink hover:bg-muted px-1.5 py-0.5 rounded transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
+									className="text-micro text-ink-2 hover:text-ink hover:bg-muted px-1.5 py-0.5 rounded transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
 								>
 									{s}
 								</button>
 							))}
 						</div>
 						<div className="flex items-center justify-between mt-2">
-							<span className="text-[10.5px] text-ink-3">⌘+Enter to send</span>
+							<span className="text-micro text-ink-3">⌘+Enter to send</span>
 							<Button
 								variant="primary"
 								size="sm"

@@ -23,7 +23,7 @@ export default function ConfirmModal({ message, onConfirm, onCancel }) {
 				</>
 			}
 		>
-			<p className="text-[13px] text-zinc-600 leading-relaxed">{message}</p>
+			<p className="text-body text-ink-2 leading-relaxed">{message}</p>
 		</Modal>
 	);
 }

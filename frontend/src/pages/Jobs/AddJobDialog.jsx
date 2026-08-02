@@ -142,9 +142,9 @@ export default function AddJobDialog({ onClose, onAdded }) {
 						</div>
 						<Button variant="primary" size="default" onClick={handleExtract} disabled={!canExtract}>
 							{extracting ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								<Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
 							) : (
-								<Sparkles className="h-3.5 w-3.5" />
+								<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
 							)}
 							{extracting ? "Extracting…" : "Extract"}
 						</Button>
@@ -163,7 +163,7 @@ export default function AddJobDialog({ onClose, onAdded }) {
 
 				<div className="flex items-center gap-3">
 					<div className="h-px flex-1 bg-line" />
-					<span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
+					<span className="text-micro font-medium text-ink-3 uppercase tracking-wider">
 						or fill manually
 					</span>
 					<div className="h-px flex-1 bg-line" />

@@ -79,7 +79,7 @@ function FetchDropdown({ loading, onFetch }) {
 				className="min-w-[160px]"
 				ariaLabel="Fetch jobs from"
 			>
-				<div className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
+				<div className="px-2.5 pt-1 pb-1.5 text-micro font-semibold uppercase tracking-wider text-ink-3">
 					Fetch jobs from
 				</div>
 				{FETCH_RANGES.map((r) => (

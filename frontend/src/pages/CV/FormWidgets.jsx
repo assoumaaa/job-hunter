@@ -122,7 +122,7 @@ export function Field({ label, value, onChange, placeholder, type = "text" }) {
 export function ListItem({ children, onRemove, label }) {
 	return (
 		<div className="relative group border border-line rounded-lg p-3.5 space-y-3 bg-canvas/40 hover:bg-surface transition-colors">
-			{label && <div className="text-[10.5px] font-semibold uppercase tracking-wide text-ink-3">{label}</div>}
+			{label && <div className="text-micro font-semibold uppercase tracking-wide text-ink-3">{label}</div>}
 			<button
 				type="button"
 				onClick={onRemove}

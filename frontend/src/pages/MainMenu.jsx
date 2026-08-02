@@ -68,7 +68,7 @@ export default function MainMenu() {
 				</div>
 				{!collapsed && (
 					<div className="flex flex-col leading-none">
-						<span className="text-[15px] font-semibold text-ink tracking-tight">Kestrel</span>
+						<span className="text-title font-semibold text-ink tracking-tight">Kestrel</span>
 						<span className="text-micro font-medium text-ink-3 mt-0.5">Job search</span>
 					</div>
 				)}
