@@ -1,7 +1,7 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
-import { Bolt as BoltIcon, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
+import { Bolt as BoltIcon, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
 import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_META, RELEVANCE_OPTIONS } from "./StatusChip";
-import { useCallApi, useLoading } from "services";
+import { readToken, useCallApi, useLoading, useTheme } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import AddJobDialog from "./AddJobDialog";
@@ -20,29 +20,11 @@ import { useSnackbar } from "notistack";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-const gridTheme = themeQuartz.withParams({
-	fontSize: 14,
-	rowHeight: 68,
-	headerHeight: 42,
-	fontFamily: "Inter, sans-serif",
-	selectedRowBackgroundColor: "#fafafa",
-	columnBorder: false,
-	rowBorder: { color: "#f4f4f5", width: 1 },
-	oddRowBackgroundColor: "#ffffff",
-	headerBackgroundColor: "#fafafa",
-	headerTextColor: "#71717a",
-	headerFontWeight: 500,
-	headerFontSize: 12,
-	cellHorizontalPadding: 18,
-});
-
 const FETCH_RANGES = [
 	{ value: "24h", label: "Last 24h" },
 	{ value: "week", label: "Last week" },
 	{ value: "month", label: "Last month" },
 ];
-
-const PULSE_STYLE = { animation: "pulse 1.2s ease-in-out infinite" };
 
 const PAGE_SIZE = 50;
 
@@ -60,7 +42,7 @@ function SourceIcon({ source, className = "" }) {
 	}
 	return (
 		<span
-			className={`rounded-full bg-zinc-200 flex items-center justify-center text-[7px] font-bold text-zinc-500 ${className}`}
+			className={`rounded-full bg-muted flex items-center justify-center text-[7px] font-bold text-ink-3 ${className}`}
 		>
 			M
 		</span>
@@ -73,9 +55,17 @@ function FetchDropdown({ loading, onFetch }) {
 
 	return (
 		<>
-			<Button ref={triggerRef} variant="outline" size="sm" onClick={() => setOpen((o) => !o)} disabled={loading}>
+			<Button
+				ref={triggerRef}
+				variant="outline"
+				size="sm"
+				onClick={() => setOpen((o) => !o)}
+				disabled={loading}
+				aria-haspopup="menu"
+				aria-expanded={open}
+			>
 				{loading ? (
-					<RefreshCw className="h-3.5 w-3.5 animate-spin" />
+					<RefreshCw className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
 				) : (
 					<SourceIcon source="linkedin" className="h-3.5 w-3.5" />
 				)}
@@ -87,19 +77,21 @@ function FetchDropdown({ loading, onFetch }) {
 				triggerRef={triggerRef}
 				align="right"
 				className="min-w-[160px]"
+				ariaLabel="Fetch jobs from"
 			>
-				<div className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+				<div className="px-2.5 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-3">
 					Fetch jobs from
 				</div>
 				{FETCH_RANGES.map((r) => (
 					<button
 						key={r.value}
 						type="button"
+						role="menuitem"
 						onClick={() => {
 							setOpen(false);
 							onFetch(r.value);
 						}}
-						className="w-full text-left px-2.5 h-8 text-[13px] text-zinc-700 hover:bg-zinc-50 cursor-pointer truncate"
+						className="w-full text-left px-2.5 h-8 text-body text-ink hover:bg-hovertint focus:bg-hovertint focus:outline-none cursor-pointer truncate"
 					>
 						{r.label}
 					</button>
@@ -134,7 +126,8 @@ function AppliedDateCell({ value, onChange }) {
 			<input
 				ref={inputRef}
 				type="date"
-				className="text-[13px] border-none bg-transparent cursor-pointer w-full text-zinc-600"
+				aria-label="Applied date"
+				className="text-body border-none bg-transparent cursor-pointer w-full text-ink-2"
 				value={value ? new Date(value).toISOString().slice(0, 10) : ""}
 				onChange={(e) => {
 					onChange(e.target.value ? new Date(e.target.value).toISOString() : null);
@@ -149,9 +142,10 @@ function AppliedDateCell({ value, onChange }) {
 		<button
 			type="button"
 			onClick={() => setEditing(true)}
-			className="w-full h-full text-left text-[13px] text-zinc-600 cursor-pointer hover:text-zinc-900 transition-colors"
+			aria-label={display ? `Change applied date (${display})` : "Set applied date"}
+			className="w-full h-full text-left text-body font-mono tabular-nums text-ink-2 cursor-pointer hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
 		>
-			{display || <span className="text-zinc-300">—</span>}
+			{display || <span className="text-ink-3">-</span>}
 		</button>
 	);
 }
@@ -182,6 +176,33 @@ export default function Jobs() {
 	const loading = useLoading();
 	const { enqueueSnackbar } = useSnackbar();
 	const navigate = useNavigate();
+	const { resolved } = useTheme();
+
+	// Grid colors come from the Kestrel tokens for the active theme.
+	const gridTheme = useMemo(
+		() =>
+			themeQuartz.withParams({
+				fontSize: 13.5,
+				rowHeight: 68,
+				headerHeight: 42,
+				fontFamily: '"Geist", system-ui, sans-serif',
+				accentColor: readToken("--k-accent"),
+				backgroundColor: readToken("--k-surface"),
+				foregroundColor: readToken("--k-ink"),
+				selectedRowBackgroundColor: readToken("--k-accent-soft"),
+				columnBorder: false,
+				rowBorder: { color: readToken("--k-line"), width: 1 },
+				oddRowBackgroundColor: readToken("--k-surface"),
+				headerBackgroundColor: readToken("--k-canvas"),
+				headerTextColor: readToken("--k-ink-2"),
+				headerFontWeight: 500,
+				headerFontSize: 12,
+				cellHorizontalPadding: 18,
+				rowHoverColor: readToken("--k-hover"),
+			}),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[resolved],
+	);
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -271,7 +292,7 @@ export default function Jobs() {
 				error,
 				onSuccess: (data) => {
 					enqueueSnackbar(
-						`${prefix(data)}${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
+						`${prefix(data)}${data.good_fit ?? 0} good, ${data.maybe ?? 0} maybe, ${data.irrelevant ?? 0} no`,
 						{ variant },
 					);
 					refresh();
@@ -290,8 +311,8 @@ export default function Jobs() {
 				sortable: false,
 				cellRenderer: ({ value, data }) =>
 					screeningIds.has(data.id) ? (
-						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-zinc-100 text-zinc-400 text-[11px] font-medium">
-							<span className="h-1.5 w-1.5 rounded-full bg-zinc-400" style={PULSE_STYLE} />
+						<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-full bg-st-neutral text-st-neutral-fg text-micro font-medium">
+							<span className="h-1.5 w-1.5 rounded-full bg-ink-3 pulse-dot" />
 							Screening
 						</span>
 					) : (
@@ -299,6 +320,7 @@ export default function Jobs() {
 							value={value}
 							options={RELEVANCE_OPTIONS}
 							colorMap={RELEVANCE_COLORS}
+							menuLabel="Change fit"
 							onChange={(v) => patchJob(data.id, { relevanceStatus: v })}
 						/>
 					),
@@ -313,22 +335,22 @@ export default function Jobs() {
 				cellStyle: { display: "flex", alignItems: "center" },
 				cellRenderer: ({ data }) => (
 					<div className="flex flex-col justify-center gap-0.5 h-full overflow-hidden min-w-0">
-						<div className="flex items-center gap-1.5 text-[12px] text-zinc-500 font-medium leading-tight">
+						<div className="flex items-center gap-1.5 text-label text-ink-2 font-medium leading-tight">
 							<SourceIcon source={data.source} className="w-3 h-3 shrink-0" />
 							<span className="truncate">{data.company}</span>
-							{data.location && <span className="text-zinc-300">· {data.location.split(",")[0]}</span>}
+							{data.location && <span className="text-ink-3">· {data.location.split(",")[0]}</span>}
 						</div>
 						{data.url ? (
 							<a
 								href={data.url}
 								target="_blank"
 								rel="noopener noreferrer"
-								className="text-[14px] font-semibold text-zinc-900 hover:text-indigo-600 truncate leading-snug transition-colors"
+								className="text-body font-semibold text-ink hover:text-accent truncate leading-snug transition-colors"
 							>
 								{data.title}
 							</a>
 						) : (
-							<span className="text-[14px] font-semibold text-zinc-900 truncate leading-snug">
+							<span className="text-body font-semibold text-ink truncate leading-snug">
 								{data.title}
 							</span>
 						)}
@@ -345,6 +367,7 @@ export default function Jobs() {
 						value={value}
 						options={APP_OPTIONS}
 						colorMap={APP_COLORS}
+						menuLabel="Change status"
 						onChange={(v) =>
 							patchJob(data.id, {
 								applicationStatus: v,
@@ -371,16 +394,13 @@ export default function Jobs() {
 					const isGenerating = data.agentStatus === "generating";
 
 					if (data.agentStatus === "pending" && !hasDocs) {
-						return <span className="text-zinc-300 text-xs">—</span>;
+						return <span className="text-ink-3 text-label">-</span>;
 					}
 
 					return (
 						<div className="flex items-center gap-1.5 h-full">
 							{isGenerating && (
-								<span
-									className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"
-									style={{ animation: "pulse 1.2s ease-in-out infinite" }}
-								/>
+								<span className="inline-block w-1.5 h-1.5 rounded-full bg-accent shrink-0 pulse-dot" />
 							)}
 							<DocChip jobId={data.id} label="CV" ready={data.hasGeneratedCv} contact={contact} />
 							<DocChip jobId={data.id} label="CL" ready={data.hasGeneratedCl} contact={contact} />
@@ -411,11 +431,13 @@ export default function Jobs() {
 				if (!data.hasGeneratedCv && !data.hasGeneratedCl) return null;
 				return (
 					<button
+						type="button"
 						onClick={() => navigate(`/jobs/${data.id}/tweak`)}
 						title="Tweak CV & cover letter"
-						className="inline-flex items-center justify-center h-7 w-7 rounded-md text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer"
+						aria-label="Tweak CV and cover letter"
+						className="inline-flex items-center justify-center h-7 w-7 rounded-md text-ink-3 hover:bg-muted hover:text-ink transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
 					>
-						<Pencil className="h-3.5 w-3.5" />
+						<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
 					</button>
 				);
 			},
@@ -466,7 +488,7 @@ export default function Jobs() {
 			const ids = jobs
 				.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened")
 				.map((j) => j.id);
-			screenJobs(ids, { prefix: (d) => `${d.screened ?? 0} screened — ` });
+			screenJobs(ids, { prefix: (d) => `${d.screened ?? 0} screened: ` });
 			return;
 		}
 
@@ -480,7 +502,7 @@ export default function Jobs() {
 			error: "Failed to screen jobs",
 			onSuccess: (data) => {
 				enqueueSnackbar(
-					`${data.screened ?? 0} screened — ${data.good_fit ?? 0} good · ${data.maybe ?? 0} maybe · ${data.irrelevant ?? 0} no`,
+					`${data.screened ?? 0} screened: ${data.good_fit ?? 0} good, ${data.maybe ?? 0} maybe, ${data.irrelevant ?? 0} no`,
 					{ variant: "success" },
 				);
 				refresh();
@@ -591,7 +613,7 @@ export default function Jobs() {
 				actions={
 					<>
 						<FetchDropdown loading={loading?.fetchJobs} onFetch={handleFetch} />
-						<div className="w-px h-5 bg-zinc-200 mx-1" />
+						<div className="w-px h-5 bg-line mx-1" />
 						<Button variant="outline" size="sm" onClick={() => setShowAddJob(true)}>
 							<Plus className="h-3.5 w-3.5" />
 							Add job
@@ -627,20 +649,22 @@ export default function Jobs() {
 			/>
 
 			{/* Toolbar */}
-			<div className="flex items-center gap-2 px-6 py-2.5 border-b border-zinc-100 shrink-0 flex-wrap bg-zinc-50/40">
+			<div className="flex items-center gap-2 px-6 py-2.5 border-b border-line shrink-0 flex-wrap bg-canvas/60">
 				<div className="relative">
-					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-3 pointer-events-none z-10" aria-hidden="true" />
 					<Input
 						placeholder="Company"
+						aria-label="Filter by company"
 						value={filterCompany}
 						onChange={(e) => setFilterCompany(e.target.value)}
 						className="w-36 pl-7"
 					/>
 				</div>
 				<div className="relative">
-					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+					<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-3 pointer-events-none z-10" aria-hidden="true" />
 					<Input
 						placeholder="Job title"
+						aria-label="Filter by job title"
 						value={filterTitle}
 						onChange={(e) => setFilterTitle(e.target.value)}
 						className="w-44 pl-7"
@@ -648,6 +672,7 @@ export default function Jobs() {
 				</div>
 				<Select
 					value={viewFilter}
+					ariaLabel="Filter jobs by status"
 					onChange={(v) => {
 						setViewFilter(v);
 						setPage(1);
@@ -665,7 +690,6 @@ export default function Jobs() {
 					<Button
 						variant="ghost"
 						size="sm"
-						className="text-zinc-500 hover:text-zinc-800"
 						onClick={() => {
 							setFilterCompany("");
 							setFilterTitle("");
@@ -704,7 +728,7 @@ export default function Jobs() {
 						suppressCellFocus
 						getRowId={(params) => params.data.id}
 						getRowStyle={({ data }) => ({
-							borderLeft: `2px solid ${(RELEVANCE_META[data?.relevanceStatus] ?? RELEVANCE_META.unscreened).hex}`,
+							borderLeft: `2px solid ${(RELEVANCE_META[data?.relevanceStatus] ?? RELEVANCE_META.unscreened).border}`,
 						})}
 						rowSelection={{
 							mode: "multiRow",
@@ -720,8 +744,8 @@ export default function Jobs() {
 			</div>
 
 			{/* Pagination */}
-			<div className="flex items-center justify-between gap-3 px-6 py-2.5 border-t border-zinc-100 shrink-0 bg-zinc-50/40">
-				<span className="text-[12px] text-zinc-500 tabular-nums">
+			<div className="flex items-center justify-between gap-3 px-6 py-2.5 border-t border-line shrink-0 bg-canvas/60">
+				<span className="text-label text-ink-2 font-mono tabular-nums">
 					{total} {total === 1 ? "job" : "jobs"}
 				</span>
 				<div className="flex items-center gap-2">
@@ -731,9 +755,10 @@ export default function Jobs() {
 						disabled={page <= 1}
 						onClick={() => setPage((p) => Math.max(1, p - 1))}
 					>
-						◀ Prev
+						<ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+						Prev
 					</Button>
-					<span className="text-[12px] text-zinc-600 tabular-nums">
+					<span className="text-label text-ink-2 font-mono tabular-nums">
 						Page {page} of {totalPages}
 					</span>
 					<Button
@@ -742,7 +767,8 @@ export default function Jobs() {
 						disabled={page >= totalPages}
 						onClick={() => setPage((p) => p + 1)}
 					>
-						Next ▶
+						Next
+						<ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
 					</Button>
 				</div>
 			</div>

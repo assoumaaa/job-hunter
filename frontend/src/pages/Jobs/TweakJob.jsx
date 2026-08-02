@@ -14,8 +14,13 @@ const SUGGESTIONS = {
 		"Make the bullets more punchy and metric-driven",
 		"Reorder skills so Python comes first",
 	],
-	cl: ["Make it shorter — under 200 words", "Open with a stronger hook", "Make the tone more confident"],
+	cl: ["Make it shorter, under 200 words", "Open with a stronger hook", "Make the tone more confident"],
 };
+
+const TAB_DEFS = [
+	{ key: "cv", label: "CV" },
+	{ key: "cl", label: "Cover Letter" },
+];
 
 function parseCv(value) {
 	if (!value) return null;
@@ -60,7 +65,6 @@ export default function TweakJob() {
 	const transcriptRef = useRef(null);
 
 	const messages = activeTab === "cv" ? messagesCv : messagesCl;
-	const setMessages = activeTab === "cv" ? setMessagesCv : setMessagesCl;
 
 	// Load job + profile contact on mount
 	useEffect(() => {
@@ -209,6 +213,19 @@ export default function TweakJob() {
 		}
 	};
 
+	// APG tabs: arrows move focus and selection together.
+	const onTabKeyDown = (e) => {
+		const idx = TAB_DEFS.findIndex((t) => t.key === activeTab);
+		let next = null;
+		if (e.key === "ArrowRight") next = TAB_DEFS[(idx + 1) % TAB_DEFS.length];
+		if (e.key === "ArrowLeft") next = TAB_DEFS[(idx - 1 + TAB_DEFS.length) % TAB_DEFS.length];
+		if (next) {
+			e.preventDefault();
+			setActiveTab(next.key);
+			document.getElementById(`tweak-tab-${next.key}`)?.focus();
+		}
+	};
+
 	const headerSubtitle = useMemo(() => {
 		if (!job) return "";
 		return `${job.title} · ${job.company}`;
@@ -218,10 +235,14 @@ export default function TweakJob() {
 		return (
 			<div className="flex flex-col h-full overflow-hidden">
 				<PageHeader title="Edit document" />
-				<div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">Loading…</div>
+				<div className="flex-1 flex items-center justify-center text-ink-3 text-body" role="status">
+					Loading…
+				</div>
 			</div>
 		);
 	}
+
+	const hasContent = { cv: Boolean(cv), cl: Boolean(cl) };
 
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
@@ -231,7 +252,7 @@ export default function TweakJob() {
 				actions={
 					<>
 						<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")}>
-							<ArrowLeft className="h-3.5 w-3.5" />
+							<ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
 							Back
 						</Button>
 						<Button
@@ -241,7 +262,7 @@ export default function TweakJob() {
 							disabled={!hasOriginal || tweaking}
 							title={hasOriginal ? "Restore the originally generated version" : "Nothing to reset"}
 						>
-							<RotateCcw className="h-3.5 w-3.5" />
+							<RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
 							Reset to original
 						</Button>
 						<Button variant="outline" size="sm" onClick={handleDownload} disabled={!previewUrl}>
@@ -252,21 +273,29 @@ export default function TweakJob() {
 			/>
 
 			{/* Tab switcher */}
-			<div className="flex items-center gap-1 px-6 py-2 border-b border-zinc-100 bg-zinc-50/40">
-				{[
-					{ key: "cv", label: "CV", hasContent: Boolean(cv) },
-					{ key: "cl", label: "Cover Letter", hasContent: Boolean(cl) },
-				].map((t) => (
+			<div
+				className="flex items-center gap-1 px-6 py-2 border-b border-line bg-canvas/60"
+				role="tablist"
+				aria-label="Document"
+			>
+				{TAB_DEFS.map((t) => (
 					<button
 						key={t.key}
+						id={`tweak-tab-${t.key}`}
+						type="button"
+						role="tab"
+						aria-selected={activeTab === t.key}
+						aria-controls="tweak-tabpanel"
+						tabIndex={activeTab === t.key ? 0 : -1}
 						onClick={() => setActiveTab(t.key)}
-						disabled={!t.hasContent}
-						className={`px-3 h-8 rounded-md text-[12px] font-medium transition-colors ${
+						onKeyDown={onTabKeyDown}
+						disabled={!hasContent[t.key]}
+						className={`px-3 h-8 rounded-lg text-label font-medium transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2 ${
 							activeTab === t.key
-								? "bg-white ring-1 ring-zinc-200 text-zinc-900 shadow-sm"
-								: t.hasContent
-									? "text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100"
-									: "text-zinc-300 cursor-not-allowed"
+								? "bg-surface ring-1 ring-line text-ink shadow-raised"
+								: hasContent[t.key]
+									? "text-ink-2 hover:text-ink hover:bg-muted"
+									: "text-ink-3 cursor-not-allowed"
 						}`}
 					>
 						{t.label}
@@ -275,29 +304,29 @@ export default function TweakJob() {
 			</div>
 
 			{/* Preview (left) + chat (right) */}
-			<div className="flex-1 flex overflow-hidden">
-				<div className="flex-1 min-h-0 bg-zinc-100 relative">
+			<div id="tweak-tabpanel" role="tabpanel" aria-labelledby={`tweak-tab-${activeTab}`} className="flex-1 flex overflow-hidden">
+				<div className="flex-1 min-h-0 bg-canvas relative">
 					{previewUrl && (
 						<iframe
 							key={previewUrl}
 							src={previewUrl}
-							title="preview"
+							title="Document preview"
 							className="w-full h-full border-0 bg-white"
 						/>
 					)}
 					{previewLoading && (
 						<div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-							<span className="inline-flex items-center gap-2 text-xs text-zinc-600 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm ring-1 ring-zinc-200">
-								<span
-									className="h-1.5 w-1.5 rounded-full bg-indigo-500"
-									style={{ animation: "pulse 1.2s ease-in-out infinite" }}
-								/>
+							<span
+								role="status"
+								className="inline-flex items-center gap-2 text-label text-ink bg-surface/90 backdrop-blur px-3 py-1.5 rounded-full shadow-raised ring-1 ring-line"
+							>
+								<span className="h-1.5 w-1.5 rounded-full bg-accent pulse-dot" />
 								Rendering…
 							</span>
 						</div>
 					)}
 					{!previewUrl && !previewLoading && (
-						<div className="absolute inset-0 flex items-center justify-center text-sm text-zinc-400">
+						<div className="absolute inset-0 flex items-center justify-center text-body text-ink-3">
 							{activeTab === "cv"
 								? "No CV generated for this job yet"
 								: "No cover letter generated for this job yet"}
@@ -306,15 +335,21 @@ export default function TweakJob() {
 				</div>
 
 				{/* Chat panel */}
-				<div className="w-[380px] shrink-0 border-l border-zinc-200 bg-white flex flex-col min-h-0">
-					<div ref={transcriptRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
+				<div className="w-[380px] shrink-0 border-l border-line bg-surface flex flex-col min-h-0">
+					<div
+						ref={transcriptRef}
+						role="log"
+						aria-live="polite"
+						aria-label="Edit conversation"
+						className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3"
+					>
 						{messages.length === 0 && !tweaking && (
 							<div className="h-full flex flex-col items-center justify-center text-center px-4">
-								<Sparkles className="h-5 w-5 text-zinc-300 mb-2" />
-								<p className="text-[13px] text-zinc-500 font-medium">
+								<Sparkles className="h-5 w-5 text-ink-3 mb-2" aria-hidden="true" />
+								<p className="text-body text-ink-2 font-medium">
 									Chat to edit your {activeTab === "cv" ? "CV" : "cover letter"}
 								</p>
-								<p className="text-[11.5px] text-zinc-400 mt-1 leading-relaxed">
+								<p className="text-micro text-ink-3 mt-1 leading-relaxed">
 									Ask for changes in plain English. I'll ask before inventing anything and apply what
 									your CV supports.
 								</p>
@@ -323,10 +358,10 @@ export default function TweakJob() {
 						{messages.map((m, i) => (
 							<div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
 								<div
-									className={`max-w-[85%] rounded-2xl px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap ${
+									className={`max-w-[85%] rounded-2xl px-3 py-2 text-label leading-relaxed whitespace-pre-wrap ${
 										m.role === "user"
-											? "bg-indigo-600 text-white rounded-br-sm"
-											: "bg-zinc-100 text-zinc-800 rounded-bl-sm"
+											? "bg-accent-solid text-white rounded-br-sm"
+											: "bg-muted text-ink rounded-bl-sm"
 									}`}
 								>
 									{m.content}
@@ -335,50 +370,52 @@ export default function TweakJob() {
 						))}
 						{tweaking && (
 							<div className="flex justify-start">
-								<div className="bg-zinc-100 text-zinc-500 rounded-2xl rounded-bl-sm px-3 py-2 text-[12.5px] inline-flex items-center gap-2">
-									<Sparkles className="h-3.5 w-3.5 animate-pulse" />
+								<div className="bg-muted text-ink-2 rounded-2xl rounded-bl-sm px-3 py-2 text-label inline-flex items-center gap-2">
+									<Sparkles className="h-3.5 w-3.5 motion-safe:animate-pulse" aria-hidden="true" />
 									Thinking…
 								</div>
 							</div>
 						)}
 					</div>
 
-					<div className="border-t border-zinc-200 p-3 shrink-0">
+					<div className="border-t border-line p-3 shrink-0">
 						<Textarea
 							value={prompt}
 							onChange={(e) => setPrompt(e.target.value)}
 							onKeyDown={onPromptKeyDown}
 							disabled={tweaking}
+							aria-label="Editing instruction"
 							placeholder={
 								activeTab === "cv"
 									? "Tell me what to change. E.g. 'lead each bullet with the decision, not the tech'"
 									: "Tell me what to change. E.g. 'make it shorter' or 'open with a stronger hook'"
 							}
 							rows={3}
-							className="rounded-md resize-none disabled:opacity-60"
+							className="resize-none disabled:opacity-60"
 						/>
 						<div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-							<span className="text-[10.5px] text-zinc-400 font-medium">Try:</span>
+							<span className="text-[10.5px] text-ink-3 font-medium">Try:</span>
 							{SUGGESTIONS[activeTab].map((s) => (
 								<button
 									key={s}
+									type="button"
 									onClick={() => setPrompt(s)}
 									disabled={tweaking}
-									className="text-[10.5px] text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
+									className="text-[10.5px] text-ink-2 hover:text-ink hover:bg-muted px-1.5 py-0.5 rounded transition-colors disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
 								>
 									{s}
 								</button>
 							))}
 						</div>
 						<div className="flex items-center justify-between mt-2">
-							<span className="text-[10.5px] text-zinc-400">⌘+Enter to send</span>
+							<span className="text-[10.5px] text-ink-3">⌘+Enter to send</span>
 							<Button
 								variant="primary"
 								size="sm"
 								onClick={handleTweak}
 								disabled={!prompt.trim() || tweaking}
 							>
-								<Send className="h-3.5 w-3.5" />
+								<Send className="h-3.5 w-3.5" aria-hidden="true" />
 								Send
 							</Button>
 						</div>

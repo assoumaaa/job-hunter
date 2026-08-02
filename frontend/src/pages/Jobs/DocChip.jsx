@@ -7,6 +7,8 @@ export default function DocChip({ jobId, label, ready, contact }) {
 	const [loading, setLoading] = useState(false);
 	const [callApi] = useCallApi();
 
+	const docName = label === "CV" ? "CV" : "cover letter";
+
 	const openPdf = () => {
 		if (!ready || loading) return;
 		setLoading(true);
@@ -54,8 +56,8 @@ export default function DocChip({ jobId, label, ready, contact }) {
 
 	if (!ready) {
 		return (
-			<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-md border border-dashed border-zinc-200 text-zinc-300 text-[10.5px] font-medium select-none whitespace-nowrap">
-				<FileText className="h-2.5 w-2.5" />
+			<span className="inline-flex items-center gap-1 h-[22px] px-2 rounded-md border border-dashed border-line text-ink-3 text-micro font-medium select-none whitespace-nowrap">
+				<FileText className="h-2.5 w-2.5" aria-hidden="true" />
 				{label}
 			</span>
 		);
@@ -63,13 +65,16 @@ export default function DocChip({ jobId, label, ready, contact }) {
 
 	return (
 		<button
+			type="button"
 			onClick={openPdf}
 			disabled={loading}
-			className={`inline-flex items-center gap-1 h-[22px] px-2 rounded-md ring-1 ring-inset ring-violet-200/60 bg-violet-50 text-violet-700 text-[10.5px] font-semibold whitespace-nowrap transition-all ${
-				loading ? "opacity-60" : "hover:bg-violet-100 hover:ring-violet-300/60 cursor-pointer"
+			aria-label={`Open generated ${docName} PDF`}
+			aria-busy={loading || undefined}
+			className={`inline-flex items-center gap-1 h-[22px] px-2 rounded-md bg-accent-soft text-accent-text text-micro font-semibold whitespace-nowrap transition-all focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2 ${
+				loading ? "opacity-60" : "hover:opacity-80 cursor-pointer"
 			}`}
 		>
-			<FileText className="h-2.5 w-2.5" />
+			<FileText className="h-2.5 w-2.5" aria-hidden="true" />
 			{loading ? "…" : label}
 		</button>
 	);

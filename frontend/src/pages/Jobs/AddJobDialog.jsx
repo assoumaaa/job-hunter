@@ -16,7 +16,7 @@ const SOURCE_OPTIONS = [
 function Field({ label, required, children }) {
 	return (
 		<label className="flex flex-col gap-1.5">
-			<span className="text-[11px] font-medium text-zinc-600">
+			<span className="text-micro font-medium text-ink-2">
 				{label}
 				{required && <span className="text-red-500"> *</span>}
 			</span>
@@ -26,7 +26,7 @@ function Field({ label, required, children }) {
 }
 
 const selectCls =
-	"flex h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 hover:border-zinc-300 focus-visible:outline-none focus-visible:border-zinc-400 focus-visible:ring-2 focus-visible:ring-zinc-900/5 cursor-pointer";
+	"flex h-9 w-full rounded-lg border border-line bg-surface px-3 text-body text-ink hover:border-line-strong focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-0 cursor-pointer";
 
 const EMPTY = { title: "", company: "", url: "", location: "", source: "linkedin", description: "" };
 
@@ -119,14 +119,14 @@ export default function AddJobDialog({ onClose, onAdded }) {
 		>
 			<div className="flex flex-col gap-4">
 				{/* URL extractor */}
-				<div className="rounded-lg border border-zinc-200/80 bg-gradient-to-br from-indigo-50/40 to-zinc-50 p-3 flex flex-col gap-2">
-					<div className="flex items-center gap-1.5 text-[11px] font-semibold text-zinc-700 uppercase tracking-wide">
-						<Sparkles className="h-3 w-3 text-indigo-500" />
+				<div className="rounded-lg border border-line bg-gradient-to-br from-accent-soft/60 to-canvas p-3 flex flex-col gap-2">
+					<div className="flex items-center gap-1.5 text-micro font-semibold text-ink uppercase tracking-wide">
+						<Sparkles className="h-3 w-3 text-accent" aria-hidden="true" />
 						Auto-fill from URL
 					</div>
 					<div className="flex gap-2">
 						<div className="relative flex-1">
-							<LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+							<LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-3 pointer-events-none z-10" aria-hidden="true" />
 							<Input
 								value={extractUrl}
 								onChange={(e) => {
@@ -136,6 +136,7 @@ export default function AddJobDialog({ onClose, onAdded }) {
 								}}
 								onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleExtract())}
 								placeholder="https://www.linkedin.com/jobs/view/…"
+								aria-label="Job posting URL"
 								className="pl-7"
 							/>
 						</div>
@@ -148,18 +149,24 @@ export default function AddJobDialog({ onClose, onAdded }) {
 							{extracting ? "Extracting…" : "Extract"}
 						</Button>
 					</div>
-					{extractError && <p className="text-[11.5px] text-red-600 m-0">{extractError}</p>}
+					{extractError && (
+						<p role="alert" className="text-micro text-red-600 m-0">
+							{extractError}
+						</p>
+					)}
 					{extracted && !extractError && (
-						<p className="text-[11.5px] text-emerald-700 m-0">✓ Filled below — review and click Add job.</p>
+						<p role="status" className="text-micro text-st-ok-fg m-0">
+							Filled below. Review and click Add job.
+						</p>
 					)}
 				</div>
 
 				<div className="flex items-center gap-3">
-					<div className="h-px flex-1 bg-zinc-200" />
-					<span className="text-[10.5px] font-medium text-zinc-400 uppercase tracking-wider">
+					<div className="h-px flex-1 bg-line" />
+					<span className="text-[10.5px] font-medium text-ink-3 uppercase tracking-wider">
 						or fill manually
 					</span>
-					<div className="h-px flex-1 bg-zinc-200" />
+					<div className="h-px flex-1 bg-line" />
 				</div>
 
 				<div className="grid grid-cols-2 gap-3">
@@ -167,7 +174,7 @@ export default function AddJobDialog({ onClose, onAdded }) {
 						<Input value={form.title} onChange={set("title")} placeholder="Senior Software Engineer" />
 					</Field>
 					<Field label="Company" required>
-						<Input value={form.company} onChange={set("company")} placeholder="Acme Inc" />
+						<Input value={form.company} onChange={set("company")} placeholder="e.g. Datadog" />
 					</Field>
 				</div>
 
@@ -200,7 +207,11 @@ export default function AddJobDialog({ onClose, onAdded }) {
 					/>
 				</Field>
 
-				{error && <p className="text-[12px] text-red-600 m-0">{error}</p>}
+				{error && (
+					<p role="alert" className="text-label text-red-600 m-0">
+						{error}
+					</p>
+				)}
 			</div>
 		</Modal>
 	);

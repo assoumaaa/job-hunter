@@ -56,11 +56,26 @@ export default function Dashboard() {
 	const firstName = user?.firstName || (user?.fullName?.split(" ")[0]) || "there";
 	const tabCount = (TAB_COUNT[tab] ?? (() => 0))(stats);
 
+	// APG tabs: arrows move focus and selection together.
+	const onTabKeyDown = (e) => {
+		const idx = TABS.findIndex((t) => t.key === tab);
+		let next = null;
+		if (e.key === "ArrowRight") next = TABS[(idx + 1) % TABS.length];
+		if (e.key === "ArrowLeft") next = TABS[(idx - 1 + TABS.length) % TABS.length];
+		if (e.key === "Home") next = TABS[0];
+		if (e.key === "End") next = TABS[TABS.length - 1];
+		if (next) {
+			e.preventDefault();
+			setTab(next.key);
+			document.getElementById(`dashboard-tab-${next.key}`)?.focus();
+		}
+	};
+
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
 			{/* Header */}
-			<div className="flex items-center px-8 h-14 border-b border-zinc-100 bg-white/60 backdrop-blur-sm shrink-0">
-				<h1 className="text-[14px] font-semibold text-zinc-900 tracking-tight">Overview</h1>
+			<div className="flex items-center px-8 h-14 border-b border-line bg-surface/60 backdrop-blur-sm shrink-0">
+				<h1 className="text-body font-semibold text-ink tracking-tight">Overview</h1>
 			</div>
 
 			<div className="flex-1 overflow-y-auto">
@@ -68,10 +83,10 @@ export default function Dashboard() {
 
 					{/* Greeting */}
 					<div>
-						<h2 className="text-[22px] font-semibold text-zinc-900 tracking-tight">
-							Hey {firstName} —
+						<h2 className="text-display font-semibold text-ink tracking-tight">
+							Hey {firstName}.
 						</h2>
-						<p className="text-[13px] text-zinc-500 mt-1">
+						<p className="text-body text-ink-2 mt-1">
 							Here's how your job hunt is going.
 						</p>
 					</div>
@@ -106,7 +121,7 @@ export default function Dashboard() {
 								/>
 								<MetricCard
 									label="Avg ATS"
-									value={stats.avgAts != null ? `${stats.avgAts}%` : "—"}
+									value={stats.avgAts != null ? `${stats.avgAts}%` : "-"}
 									Icon={Target}
 									sub={stats.avgAts >= 80 ? "Above benchmark" : "Room to optimize"}
 								/>
@@ -115,28 +130,40 @@ export default function Dashboard() {
 
 							{/* Tabbed list */}
 							<section className="flex flex-col gap-4">
-								<div className="flex items-center border-b border-zinc-100">
+								<div className="flex items-center border-b border-line" role="tablist" aria-label="Job lists">
 									{TABS.map(({ key, label }) => {
 										const active = tab === key;
 										return (
 											<button
 												key={key}
+												id={`dashboard-tab-${key}`}
+												type="button"
+												role="tab"
+												aria-selected={active}
+												aria-controls="dashboard-tabpanel"
+												tabIndex={active ? 0 : -1}
 												onClick={() => setTab(key)}
-												className={`relative px-3 h-9 text-[13px] font-medium transition-colors cursor-pointer ${
-													active ? "text-zinc-900" : "text-zinc-400 hover:text-zinc-700"
+												onKeyDown={onTabKeyDown}
+												className={`relative px-3 h-9 text-body font-medium transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2 ${
+													active ? "text-ink" : "text-ink-3 hover:text-ink-2"
 												}`}
 											>
 												{label}
-												{active && <span className="absolute bottom-[-1px] left-3 right-3 h-[2px] bg-zinc-900 rounded-full" />}
+												{active && <span className="absolute bottom-[-1px] left-3 right-3 h-[2px] bg-accent rounded-full" />}
 											</button>
 										);
 									})}
-									<span className="ml-auto text-[11px] text-zinc-400 tabular-nums">
+									<span className="ml-auto text-micro text-ink-3 font-mono tabular-nums">
 										{tabCount} {tabCount === 1 ? "job" : "jobs"}
 									</span>
 								</div>
 
-								<div className="flex flex-col gap-2">
+								<div
+									id="dashboard-tabpanel"
+									role="tabpanel"
+									aria-labelledby={`dashboard-tab-${tab}`}
+									className="flex flex-col gap-2"
+								>
 									{jobs.length === 0 ? (
 										<EmptyState
 											icon={Sparkles}
