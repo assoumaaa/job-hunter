@@ -45,7 +45,7 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 def parse_cv_text(text: str) -> dict:
     """Use the model to parse raw CV text into structured JSON."""
     raw = llm.complete_text(
-        model=llm.SCREENING_MODEL,
+        model=llm.screening_model(),
         max_tokens=4096,
         messages=[
             {

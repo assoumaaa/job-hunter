@@ -20,9 +20,10 @@ export default defineConfig({
 	plugins: [react(), tailwindcss()],
 	server: {
 		proxy: {
+			// Backend serves the API under /api in both dev and prod, so forward
+			// the prefix as-is (no rewrite).
 			"/api": {
 				target: "http://localhost:8000",
-				rewrite: (path) => path.replace(/^\/api/, ""),
 			},
 		},
 	},

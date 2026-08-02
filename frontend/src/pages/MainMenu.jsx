@@ -6,6 +6,7 @@ import {
 	LayoutDashboard,
 	ListChecks,
 	LogOut,
+	Settings,
 	User,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -21,6 +22,7 @@ const NAV = [
 	{ to: "/positions", label: "Targeting", Icon: ListChecks },
 	{ to: "/cv", label: "My CV", Icon: FileText },
 	{ to: "/profile", label: "Profile", Icon: User },
+	{ to: "/settings", label: "Settings", Icon: Settings },
 ];
 
 const STORAGE_KEY = "jh.menu.collapsed";

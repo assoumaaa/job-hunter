@@ -166,7 +166,7 @@ RAW TEXT:
 
 def _extract_with_claude(text: str) -> dict:
     return llm.complete_json(
-        model=llm.SCREENING_MODEL,
+        model=llm.screening_model(),
         max_tokens=2048,
         messages=[{"role": "user", "content": EXTRACT_PROMPT + text}],
     )

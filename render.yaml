@@ -1,0 +1,75 @@
+# Render Blueprint — one-file deploy of job-hunter.
+#
+# What it stands up:
+#   • a managed Postgres database (job-hunter-db)
+#   • one Docker web service built from the repo-root Dockerfile, which builds the
+#     Vite SPA and serves it same-origin with the FastAPI API on a single port.
+#
+# How to use:
+#   1. Push this file to your Git remote (Render deploys from a connected repo).
+#   2. Render Dashboard → New → Blueprint → pick this repo.
+#   3. Render prompts for every `sync: false` value below — paste them (see the
+#      values-to-set list in the deploy notes).
+#
+# Notes:
+#   • Render passes a service's env vars into the Docker build as --build-arg, so
+#     VITE_CLERK_PUBLISHABLE_KEY (declared as ARG in the Dockerfile) is baked into
+#     the SPA at build time. The publishable key is public, so this is safe;
+#     secrets (CLERK_SECRET_KEY, APP_ENCRYPTION_KEY, tokens) are runtime-only and
+#     are never referenced as ARG, so they never land in an image layer.
+#   • The schema auto-creates on startup (main.py lifespan → create_all), so no
+#     separate migration step is needed for a test deploy.
+
+databases:
+  - name: job-hunter-db
+    plan: free # test tier; free Postgres expires after 30 days — bump to a paid plan to keep it
+    databaseName: jobhunter
+    user: jobhunter
+    region: oregon
+
+services:
+  - name: job-hunter
+    type: web
+    runtime: docker
+    plan: free # test tier; free web services cold-start after ~15 min idle
+    region: oregon # must match the database's region for private-network DB access
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      # --- Database (bound automatically to the managed Postgres above) ---
+      # Render emits a bare postgresql:// URL; db.py pins it to the psycopg (v3)
+      # driver, so no manual scheme fix is needed here.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: job-hunter-db
+          property: connectionString
+
+      # --- Build-time (public) — inlined into the SPA bundle by Vite ---
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false # paste your Clerk publishable key (pk_test_… works for a test deploy)
+
+      # --- Runtime auth (Clerk) ---
+      # Must be the SAME Clerk instance as VITE_CLERK_PUBLISHABLE_KEY; the backend
+      # derives the JWKS URL from it (core/auth.py).
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+      # Currently unused by the backend — safe to leave blank at the prompt.
+      - key: CLERK_SECRET_KEY
+        sync: false
+
+      # --- Encryption for per-user API keys at rest (required to STORE per-user keys) ---
+      # Generate a proper Fernet key locally and paste it:
+      #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: APP_ENCRYPTION_KEY
+        sync: false
+
+      # --- Instance-wide fallback keys (optional; per-user Settings override these) ---
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: APIFY_TOKEN
+        sync: false
+
+      # Align Render's routing with the port the Dockerfile's uvicorn binds.
+      - key: PORT
+        value: "8000"

@@ -7,6 +7,7 @@ import TweakJob from "./Jobs/TweakJob";
 import CV from "./CV";
 import Positions from "./Positions";
 import Profile from "./Profile";
+import Settings from "./Settings";
 
 export default function Home() {
 	return (
@@ -21,6 +22,7 @@ export default function Home() {
 					<Route path="/cv" element={<CV />} />
 					<Route path="/positions" element={<Positions />} />
 					<Route path="/profile" element={<Profile />} />
+					<Route path="/settings" element={<Settings />} />
 					<Route path="*" element={<Navigate to="/home" replace />} />
 				</Routes>
 			</main>

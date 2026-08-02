@@ -13,11 +13,10 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Model selection: Haiku for cheap bulk screening, Sonnet for quality generation.
-# The two tiers are owned by the llm module (config-driven); named here for the
-# functions below.
+# The two tiers are owned by the llm module and resolved per request (per-user
+# choice → config default); call `llm.screening_model()` / `llm.generation_model()`
+# at each call site so a user's Settings choice takes effect.
 # ---------------------------------------------------------------------------
-SCREENING_MODEL = llm.SCREENING_MODEL
-GENERATION_MODEL = llm.GENERATION_MODEL
 
 # ---------------------------------------------------------------------------
 # Forbidden words/phrases for generated text
@@ -380,7 +379,7 @@ def generate_cv_and_cl(
     # Two cache breakpoints: system prompt (global) + candidate context (per-user).
     # Both stay warm across passes and across all jobs for the same user.
     text = llm.complete_text(
-        model=GENERATION_MODEL,
+        model=llm.generation_model(),
         max_tokens=4096,
         system=[
             {
@@ -431,7 +430,7 @@ def trim_resume_for_fit(resume: dict, overflow_words: int) -> dict:
     )
 
     text = llm.complete_text(
-        model=SCREENING_MODEL,
+        model=llm.screening_model(),
         max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user}],
@@ -616,7 +615,7 @@ def chat_edit_cv(
     )
 
     data = llm.complete_tool(
-        model=GENERATION_MODEL,
+        model=llm.generation_model(),
         max_tokens=8192,
         system=[
             {"type": "text", "text": _CHAT_CV_SYSTEM, "cache_control": {"type": "ephemeral"}},
@@ -671,7 +670,7 @@ def chat_edit_cl(
     )
 
     data = llm.complete_tool(
-        model=GENERATION_MODEL,
+        model=llm.generation_model(),
         max_tokens=4096,
         system=[
             {"type": "text", "text": _CHAT_CL_SYSTEM, "cache_control": {"type": "ephemeral"}},
@@ -974,7 +973,7 @@ def screen_jobs(
 
         raw = (
             llm.complete_text(
-                model=SCREENING_MODEL,
+                model=llm.screening_model(),
                 max_tokens=4096,
                 system=system_messages,
                 messages=[{"role": "user", "content": user_message}],

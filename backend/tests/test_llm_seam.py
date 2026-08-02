@@ -40,7 +40,7 @@ def test_screen_jobs_parses_json_array(fake_llm):
     ]
     # The call really went through the seam.
     assert len(fake.calls) == 1
-    assert fake.calls[0]["model"] == llm.SCREENING_MODEL
+    assert fake.calls[0]["model"] == llm.screening_model()
 
 
 def test_analyze_jd_parses_fake_reply(fake_llm):
@@ -93,7 +93,7 @@ def test_transient_error_is_retried():
     original_sleep = llm_mod.time.sleep
     llm_mod.time.sleep = lambda *_: None
     try:
-        text = llm.complete_text(model=llm.SCREENING_MODEL, messages=[{"role": "user", "content": "hi"}])
+        text = llm.complete_text(model=llm.screening_model(), messages=[{"role": "user", "content": "hi"}])
     finally:
         llm_mod.time.sleep = original_sleep
     assert text == "ok"

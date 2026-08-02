@@ -1,12 +1,12 @@
 import { ArrowLeft, RotateCcw, Send, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useSnackbar } from "notistack";
 
 import { Button } from "components/ui/button";
-import { Textarea } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
+import { Textarea } from "components/ui/input";
 import { useCallApi } from "services";
+import { useSnackbar } from "notistack";
 
 const SUGGESTIONS = {
 	cv: [
@@ -27,6 +27,17 @@ function parseCv(value) {
 	}
 }
 
+function parseHistory(value) {
+	if (!value) return [];
+	if (Array.isArray(value)) return value;
+	try {
+		const parsed = JSON.parse(value);
+		return Array.isArray(parsed) ? parsed : [];
+	} catch {
+		return [];
+	}
+}
+
 export default function TweakJob() {
 	const { jobId } = useParams();
 	const navigate = useNavigate();
@@ -39,11 +50,17 @@ export default function TweakJob() {
 	const [cl, setCl] = useState(""); // CL text
 	const [hasOriginal, setHasOriginal] = useState(false);
 	const [activeTab, setActiveTab] = useState("cv");
+	const [messagesCv, setMessagesCv] = useState([]); // [{role, content}]
+	const [messagesCl, setMessagesCl] = useState([]);
 	const [prompt, setPrompt] = useState("");
 	const [tweaking, setTweaking] = useState(false);
 	const [previewUrl, setPreviewUrl] = useState(null);
 	const [previewLoading, setPreviewLoading] = useState(false);
 	const prevBlobRef = useRef(null);
+	const transcriptRef = useRef(null);
+
+	const messages = activeTab === "cv" ? messagesCv : messagesCl;
+	const setMessages = activeTab === "cv" ? setMessagesCv : setMessagesCl;
 
 	// Load job + profile contact on mount
 	useEffect(() => {
@@ -59,6 +76,8 @@ export default function TweakJob() {
 				setCv(parseCv(found.generatedCv));
 				setCl(found.generatedCl || "");
 				setHasOriginal(Boolean(found.originalCv || found.originalCl));
+				setMessagesCv(parseHistory(found.chatCv));
+				setMessagesCl(parseHistory(found.chatCl));
 			},
 			error: "Failed to load job",
 		});
@@ -113,6 +132,12 @@ export default function TweakJob() {
 		renderPreview();
 	}, [renderPreview]);
 
+	// Keep the transcript pinned to the latest message
+	useEffect(() => {
+		const el = transcriptRef.current;
+		if (el) el.scrollTop = el.scrollHeight;
+	}, [messages, tweaking, activeTab]);
+
 	// Cleanup blob on unmount
 	useEffect(
 		() => () => {
@@ -124,17 +149,34 @@ export default function TweakJob() {
 	const handleTweak = () => {
 		const trimmed = prompt.trim();
 		if (!trimmed || tweaking) return;
+		const isCv = activeTab === "cv";
+		const prev = isCv ? messagesCv : messagesCl;
+		const applyMessages = isCv ? setMessagesCv : setMessagesCl;
+		// Optimistically show the user's turn
+		applyMessages([...prev, { role: "user", content: trimmed }]);
+		setPrompt("");
 		setTweaking(true);
 		callApi(`/jobs/${jobId}/tweak`, {
 			method: "POST",
 			json: { target: activeTab, prompt: trimmed },
 			error: "Tweak failed",
 			onSuccess: (resp) => {
+				// Server transcript is authoritative (includes the assistant reply)
+				if (resp.history) applyMessages(parseHistory(resp.history));
+				else if (resp.message)
+					applyMessages([
+						...prev,
+						{ role: "user", content: trimmed },
+						{ role: "assistant", content: resp.message },
+					]);
 				if (resp.generatedCv) setCv(parseCv(resp.generatedCv));
 				if (resp.generatedCl != null) setCl(resp.generatedCl || "");
 				setHasOriginal(resp.hasOriginal);
-				setPrompt("");
-				enqueueSnackbar("Applied", { variant: "success" });
+			},
+			onError: () => {
+				// Roll back the optimistic turn on failure
+				applyMessages(prev);
+				setPrompt(trimmed);
 			},
 		}).finally(() => setTweaking(false));
 	};
@@ -177,7 +219,7 @@ export default function TweakJob() {
 	if (!job) {
 		return (
 			<div className="flex flex-col h-full overflow-hidden">
-				<PageHeader title="Tweak document" />
+				<PageHeader title="Edit document" />
 				<div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">Loading…</div>
 			</div>
 		);
@@ -186,7 +228,7 @@ export default function TweakJob() {
 	return (
 		<div className="flex flex-col h-full overflow-hidden">
 			<PageHeader
-				title="Tweak document"
+				title="Edit document"
 				subtitle={headerSubtitle}
 				actions={
 					<>
@@ -234,8 +276,8 @@ export default function TweakJob() {
 				))}
 			</div>
 
-			{/* Preview + prompt */}
-			<div className="flex-1 flex flex-col overflow-hidden">
+			{/* Preview (left) + chat (right) */}
+			<div className="flex-1 flex overflow-hidden">
 				<div className="flex-1 min-h-0 bg-zinc-100 relative">
 					{previewUrl && (
 						<iframe
@@ -265,55 +307,83 @@ export default function TweakJob() {
 					)}
 				</div>
 
-				<div className="border-t border-zinc-200 bg-white p-3 shrink-0">
-					<div className="flex items-start gap-2">
-						<div className="flex-1">
-							<Textarea
-								value={prompt}
-								onChange={(e) => setPrompt(e.target.value)}
-								onKeyDown={onPromptKeyDown}
-								disabled={tweaking}
-								placeholder={
-									activeTab === "cv"
-										? "Tell me what to change. E.g. 'shorten the Odoo bullets' or 'add a bullet about my Python work'"
-										: "Tell me what to change. E.g. 'make it shorter' or 'open with a stronger hook'"
-								}
-								rows={2}
-								className="rounded-md resize-none disabled:opacity-60"
-							/>
-							<div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-								<span className="text-[10.5px] text-zinc-400 font-medium">Try:</span>
-								{SUGGESTIONS[activeTab].map((s) => (
-									<button
-										key={s}
-										onClick={() => setPrompt(s)}
-										disabled={tweaking}
-										className="text-[10.5px] text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
-									>
-										{s}
-									</button>
-								))}
-								<span className="ml-auto text-[10.5px] text-zinc-400">⌘+Enter</span>
+				{/* Chat panel */}
+				<div className="w-[380px] shrink-0 border-l border-zinc-200 bg-white flex flex-col min-h-0">
+					<div ref={transcriptRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-4 space-y-3">
+						{messages.length === 0 && !tweaking && (
+							<div className="h-full flex flex-col items-center justify-center text-center px-4">
+								<Sparkles className="h-5 w-5 text-zinc-300 mb-2" />
+								<p className="text-[13px] text-zinc-500 font-medium">
+									Chat to edit your {activeTab === "cv" ? "CV" : "cover letter"}
+								</p>
+								<p className="text-[11.5px] text-zinc-400 mt-1 leading-relaxed">
+									Ask for changes in plain English. I'll ask before inventing anything and apply what
+									your CV supports.
+								</p>
 							</div>
-						</div>
-						<Button
-							variant="primary"
-							onClick={handleTweak}
-							disabled={!prompt.trim() || tweaking}
-							className="h-[68px] px-4"
-						>
-							{tweaking ? (
-								<>
+						)}
+						{messages.map((m, i) => (
+							<div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+								<div
+									className={`max-w-[85%] rounded-2xl px-3 py-2 text-[12.5px] leading-relaxed whitespace-pre-wrap ${
+										m.role === "user"
+											? "bg-indigo-600 text-white rounded-br-sm"
+											: "bg-zinc-100 text-zinc-800 rounded-bl-sm"
+									}`}
+								>
+									{m.content}
+								</div>
+							</div>
+						))}
+						{tweaking && (
+							<div className="flex justify-start">
+								<div className="bg-zinc-100 text-zinc-500 rounded-2xl rounded-bl-sm px-3 py-2 text-[12.5px] inline-flex items-center gap-2">
 									<Sparkles className="h-3.5 w-3.5 animate-pulse" />
-									Tweaking…
-								</>
-							) : (
-								<>
-									<Send className="h-3.5 w-3.5" />
-									Send
-								</>
-							)}
-						</Button>
+									Thinking…
+								</div>
+							</div>
+						)}
+					</div>
+
+					<div className="border-t border-zinc-200 p-3 shrink-0">
+						<Textarea
+							value={prompt}
+							onChange={(e) => setPrompt(e.target.value)}
+							onKeyDown={onPromptKeyDown}
+							disabled={tweaking}
+							placeholder={
+								activeTab === "cv"
+									? "Tell me what to change. E.g. 'lead each bullet with the decision, not the tech'"
+									: "Tell me what to change. E.g. 'make it shorter' or 'open with a stronger hook'"
+							}
+							rows={3}
+							className="rounded-md resize-none disabled:opacity-60"
+						/>
+						<div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+							<span className="text-[10.5px] text-zinc-400 font-medium">Try:</span>
+							{SUGGESTIONS[activeTab].map((s) => (
+								<button
+									key={s}
+									onClick={() => setPrompt(s)}
+									disabled={tweaking}
+									className="text-[10.5px] text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
+								>
+									{s}
+								</button>
+							))}
+						</div>
+						<div className="flex items-center justify-between mt-2">
+							<span className="text-[10.5px] text-zinc-400">⌘+Enter to send</span>
+							<Button
+								variant="primary"
+								size="sm"
+								onClick={handleTweak}
+								disabled={!prompt.trim() || tweaking}
+							>
+								<Send className="h-3.5 w-3.5" />
+								Send
+							</Button>
+						</div>
 					</div>
 				</div>
 			</div>
