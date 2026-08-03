@@ -76,7 +76,7 @@ def _mount_frontend(app: FastAPI) -> None:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Kestrel API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(title="Job Hunter API", version="1.0.0", lifespan=lifespan)
 
     # gzip JSON responses (the jobs list compresses ~10x).
     app.add_middleware(GZipMiddleware, minimum_size=1000)

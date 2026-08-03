@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 /**
- * Kestrel theme service.
+ * Job Hunter theme service.
  * Preference ("system" | "light" | "dark") persists in localStorage; the
  * resolved mode lands on <html data-theme> (bootstrapped before first paint
  * by the inline script in index.html). Token values live in App.css; JS

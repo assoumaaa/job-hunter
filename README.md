@@ -1,12 +1,12 @@
-# Kestrel
+# Job Hunter
 
-Kestrel is a job search workspace. It fetches openings from LinkedIn, screens
+Job Hunter is a job search workspace. It fetches openings from LinkedIn, screens
 them against your profile with Claude, tailors your CV and cover letter to
 each posting, and tracks every application from first fetch to offer.
 
 ## How it's built
 
-- **Frontend** (`frontend/`): Vite + React SPA. Tailwind v4 with the Kestrel
+- **Frontend** (`frontend/`): Vite + React SPA. Tailwind v4 with the Job Hunter
   design tokens (`src/App.css`, guideline in `docs/brand.md`), Geist type,
   light and dark themes, ag-grid for the jobs table, Clerk for auth.
 - **Backend** (`backend/`): FastAPI + SQLAlchemy. Claude handles screening,

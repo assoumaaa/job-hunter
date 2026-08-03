@@ -9,7 +9,7 @@ import { readToken, useTheme } from "services";
 import Home from "./Home";
 import Logout from "./Logout";
 
-/** Centered auth screen with the Kestrel lockup above the Clerk card. */
+/** Centered auth screen with the Job Hunter lockup above the Clerk card. */
 function AuthScreen({ children }) {
 	return (
 		<div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-canvas px-4">
@@ -18,7 +18,7 @@ function AuthScreen({ children }) {
 					<BrandMark className="h-5 w-5 text-white" />
 				</div>
 				<div className="flex flex-col leading-none">
-					<span className="text-display font-semibold text-ink tracking-tight">Kestrel</span>
+					<span className="text-display font-semibold text-ink tracking-tight">Job Hunter</span>
 					<span className="text-label text-ink-3 mt-1">Job search workspace</span>
 				</div>
 			</div>

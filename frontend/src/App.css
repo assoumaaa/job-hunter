@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* ────────────────────────────────────────────────────────────────────────────
-   Kestrel design tokens.
+   Job Hunter design tokens.
    Raw values live on :root as --k-* / --st-* custom properties and flip with
    [data-theme="dark"] (set before first paint by the inline script in
    index.html). Tailwind utilities are generated from them via @theme inline,

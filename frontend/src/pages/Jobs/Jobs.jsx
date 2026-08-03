@@ -184,7 +184,7 @@ export default function Jobs() {
 	const navigate = useNavigate();
 	const { resolved } = useTheme();
 
-	// Grid colors come from the Kestrel tokens for the active theme.
+	// Grid colors come from the Job Hunter tokens for the active theme.
 	const gridTheme = useMemo(
 		() =>
 			themeQuartz.withParams({

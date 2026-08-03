@@ -1,6 +1,6 @@
-# Kestrel Brand Guideline
+# Job Hunter Brand Guideline
 
-The visual system for the Kestrel app (frontend). One page; if a change
+The visual system for the Job Hunter app (frontend). One page; if a change
 contradicts this file, update the file in the same commit.
 
 Design spec: `docs/superpowers/specs/2026-08-03-kestrel-brand-design.md`
@@ -10,7 +10,7 @@ Clerk) read the same variables through `services/theme.js` `readToken()`.
 
 ## Identity
 
-- **Name:** Kestrel. Display surfaces only; repo stays `job-hunter`, routes and
+- **Name:** Job Hunter. Display surfaces only; repo stays `job-hunter`, routes and
   DB names unchanged.
 - **Mark:** the crosshair (corner brackets + filled center dot). White glyph on
   a cobalt `#2563eb` rounded tile for favicon / app icon / sidebar; plain
