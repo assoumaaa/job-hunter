@@ -3,6 +3,9 @@ import { Bolt as BoltIcon, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, R
 import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_META, RELEVANCE_OPTIONS } from "./StatusChip";
 import { readToken, useCallApi, useLoading, useTheme } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+const VIEW_VALUES = ["to_apply", "applied", "interview", "rejected", "no_fit", "all"];
 
 import AddJobDialog from "./AddJobDialog";
 import { AgGridReact } from "ag-grid-react";
@@ -163,7 +166,10 @@ export default function Jobs() {
 	const [filterTitle, setFilterTitle] = useState("");
 	const [debCompany, setDebCompany] = useState("");
 	const [debTitle, setDebTitle] = useState("");
-	const [viewFilter, setViewFilter] = useState("to_apply");
+	// The Overview page deep-links here with ?view=… — honor it as the initial filter.
+	const [searchParams] = useSearchParams();
+	const initialView = VIEW_VALUES.includes(searchParams.get("view")) ? searchParams.get("view") : "to_apply";
+	const [viewFilter, setViewFilter] = useState(initialView);
 	const [sort, setSort] = useState("fetchedAt");
 	const [direction, setDirection] = useState("desc");
 	const [page, setPage] = useState(1);
@@ -743,35 +749,34 @@ export default function Jobs() {
 				)}
 			</div>
 
-			{/* Pagination */}
-			<div className="flex items-center justify-between gap-3 px-6 py-2.5 border-t border-line shrink-0 bg-canvas/60">
-				<span className="text-label text-ink-2 font-mono tabular-nums">
-					{total} {total === 1 ? "job" : "jobs"}
-				</span>
-				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={page <= 1}
-						onClick={() => setPage((p) => Math.max(1, p - 1))}
-					>
-						<ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
-						Prev
-					</Button>
-					<span className="text-label text-ink-2 font-mono tabular-nums">
+			{/* Pagination — only when there's more than one page (the header shows the total). */}
+			{totalPages > 1 && (
+				<div className="flex items-center justify-end gap-3 px-6 py-1.5 border-t border-line shrink-0 bg-canvas/60">
+					<span className="text-micro text-ink-3 font-mono tabular-nums">
 						Page {page} of {totalPages}
 					</span>
-					<Button
-						variant="outline"
-						size="sm"
-						disabled={page >= totalPages}
-						onClick={() => setPage((p) => p + 1)}
-					>
-						Next
-						<ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-					</Button>
+					<div className="flex items-center gap-1">
+						<button
+							type="button"
+							aria-label="Previous page"
+							disabled={page <= 1}
+							onClick={() => setPage((p) => Math.max(1, p - 1))}
+							className="h-7 w-7 rounded-md flex items-center justify-center text-ink-2 hover:bg-muted hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-1"
+						>
+							<ChevronLeft className="h-4 w-4" aria-hidden="true" />
+						</button>
+						<button
+							type="button"
+							aria-label="Next page"
+							disabled={page >= totalPages}
+							onClick={() => setPage((p) => p + 1)}
+							className="h-7 w-7 rounded-md flex items-center justify-center text-ink-2 hover:bg-muted hover:text-ink disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-1"
+						>
+							<ChevronRight className="h-4 w-4" aria-hidden="true" />
+						</button>
+					</div>
 				</div>
-			</div>
+			)}
 		</div>
 	);
 }
