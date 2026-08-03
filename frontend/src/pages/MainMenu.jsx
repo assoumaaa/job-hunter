@@ -6,7 +6,9 @@ import {
 	LayoutDashboard,
 	ListChecks,
 	LogOut,
+	Moon,
 	Settings,
+	Sun,
 	User,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -15,6 +17,7 @@ import { NavLink } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 
 import BrandMark from "components/BrandMark";
+import { useTheme } from "services";
 
 const NAV = [
 	{ to: "/home", label: "Overview", Icon: LayoutDashboard },
@@ -30,6 +33,7 @@ const STORAGE_KEY = "jh.menu.collapsed";
 export default function MainMenu() {
 	const { signOut } = useClerk();
 	const { user } = useUser();
+	const { resolved, setPref } = useTheme();
 	const [collapsed, setCollapsed] = useState(() => {
 		try {
 			return localStorage.getItem(STORAGE_KEY) === "1";
@@ -117,7 +121,7 @@ export default function MainMenu() {
 					)}
 				</div>
 
-				<div className="flex gap-1">
+				<div className={`flex gap-1 ${collapsed ? "flex-col" : ""}`}>
 					<button
 						type="button"
 						onClick={() => signOut()}
@@ -127,27 +131,32 @@ export default function MainMenu() {
 						<LogOut className="h-4 w-4" aria-hidden="true" />
 						{!collapsed && "Sign out"}
 					</button>
-					{!collapsed && (
-						<button
-							type="button"
-							onClick={() => setCollapsed(true)}
-							aria-label="Collapse sidebar"
-							className="h-8 w-8 rounded-lg flex items-center justify-center text-ink-3 hover:bg-muted hover:text-ink-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-						>
-							<ChevronsLeft className="h-3.5 w-3.5" aria-hidden="true" />
-						</button>
-					)}
-				</div>
-				{collapsed && (
 					<button
 						type="button"
-						onClick={() => setCollapsed(false)}
-						aria-label="Expand sidebar"
-						className="h-8 w-full rounded-lg flex items-center justify-center text-ink-3 hover:bg-muted hover:text-ink-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
+						onClick={() => setPref(resolved === "dark" ? "light" : "dark")}
+						aria-label={resolved === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+						title={resolved === "dark" ? "Light mode" : "Dark mode"}
+						className={`${collapsed ? "w-full" : ""} h-8 w-8 rounded-lg flex items-center justify-center text-ink-3 hover:bg-muted hover:text-ink-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2`}
 					>
-						<ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+						{resolved === "dark" ? (
+							<Sun className="h-4 w-4" aria-hidden="true" />
+						) : (
+							<Moon className="h-4 w-4" aria-hidden="true" />
+						)}
 					</button>
-				)}
+					<button
+						type="button"
+						onClick={() => setCollapsed((c) => !c)}
+						aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+						className={`${collapsed ? "w-full" : ""} h-8 w-8 rounded-lg flex items-center justify-center text-ink-3 hover:bg-muted hover:text-ink-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2`}
+					>
+						{collapsed ? (
+							<ChevronsRight className="h-3.5 w-3.5" aria-hidden="true" />
+						) : (
+							<ChevronsLeft className="h-3.5 w-3.5" aria-hidden="true" />
+						)}
+					</button>
+				</div>
 			</div>
 		</aside>
 	);
