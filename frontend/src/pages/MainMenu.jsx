@@ -6,9 +6,7 @@ import {
 	LayoutDashboard,
 	ListChecks,
 	LogOut,
-	Moon,
 	Settings,
-	Sun,
 	User,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -17,7 +15,6 @@ import { NavLink } from "react-router-dom";
 import { useClerk, useUser } from "@clerk/clerk-react";
 
 import BrandMark from "components/BrandMark";
-import { useTheme } from "services";
 
 const NAV = [
 	{ to: "/home", label: "Overview", Icon: LayoutDashboard },
@@ -33,7 +30,6 @@ const STORAGE_KEY = "jh.menu.collapsed";
 export default function MainMenu() {
 	const { signOut } = useClerk();
 	const { user } = useUser();
-	const { resolved, setPref } = useTheme();
 	const [collapsed, setCollapsed] = useState(() => {
 		try {
 			return localStorage.getItem(STORAGE_KEY) === "1";
@@ -56,7 +52,6 @@ export default function MainMenu() {
 		.toUpperCase();
 	const displayName =
 		user?.fullName || user?.firstName || user?.primaryEmailAddress?.emailAddress?.split("@")[0] || "Account";
-	const email = user?.primaryEmailAddress?.emailAddress;
 
 	return (
 		<aside
@@ -116,7 +111,6 @@ export default function MainMenu() {
 					{!collapsed && (
 						<div className="flex-1 min-w-0">
 							<div className="text-body font-semibold text-ink truncate leading-tight">{displayName}</div>
-							{email && <div className="text-micro text-ink-3 truncate leading-tight mt-0.5">{email}</div>}
 						</div>
 					)}
 				</div>
@@ -130,19 +124,6 @@ export default function MainMenu() {
 					>
 						<LogOut className="h-4 w-4" aria-hidden="true" />
 						{!collapsed && "Sign out"}
-					</button>
-					<button
-						type="button"
-						onClick={() => setPref(resolved === "dark" ? "light" : "dark")}
-						aria-label={resolved === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-						title={resolved === "dark" ? "Light mode" : "Dark mode"}
-						className={`${collapsed ? "w-full" : ""} h-8 w-8 rounded-lg flex items-center justify-center text-ink-3 hover:bg-muted hover:text-ink-2 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2`}
-					>
-						{resolved === "dark" ? (
-							<Sun className="h-4 w-4" aria-hidden="true" />
-						) : (
-							<Moon className="h-4 w-4" aria-hidden="true" />
-						)}
 					</button>
 					<button
 						type="button"
