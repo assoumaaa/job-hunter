@@ -1,17 +1,15 @@
 import { useEffect, useState } from "react";
-import { CheckCircle2, Save, X } from "lucide-react";
+import { CheckCircle2, Save } from "lucide-react";
 
 import { Button } from "components/ui/button";
 import { FormSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { RadioPills } from "components/ui/radio-pills";
+import { LanguagesField, NoticePeriodField } from "./ProfileFields";
 import { useCallApi } from "services";
 
 const SENIORITY = ["Junior", "Mid", "Senior", "Lead", "Principal"].map((v) => ({ value: v, label: v }));
-const NOTICE = ["Immediately", "2 weeks", "1 month", "2 months", "3 months"].map((v) => ({ value: v, label: v }));
-const LANG_LEVELS = ["Basic", "Conversational", "Fluent", "Native"].map((v) => ({ value: v, label: v }));
-const COMMON_LANGS = ["English", "Arabic", "French", "German", "Spanish", "Mandarin", "Portuguese", "Dutch"];
 
 function Row({ label, description, children, htmlFor, align = "center" }) {
 	const LabelTag = htmlFor ? "label" : "p";
@@ -42,19 +40,10 @@ export default function Profile() {
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
 	const [firstLoad, setFirstLoad] = useState(true);
-	const [langName, setLangName] = useState("");
-	const [langLevel, setLangLevel] = useState("Fluent");
 
 	const [callApi] = useCallApi();
 
 	const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
-
-	const addLang = (name) => {
-		const t = name.trim();
-		if (!t || form.languages.some((l) => l.name.toLowerCase() === t.toLowerCase())) return;
-		set("languages", [...form.languages, { name: t, level: langLevel }]);
-		setLangName("");
-	};
 
 	useEffect(() => {
 		callApi("/profile", {
@@ -143,12 +132,9 @@ export default function Profile() {
 							<Input id="profile-location" value={form.currentLocation} onChange={(e) => set("currentLocation", e.target.value)} placeholder="e.g. Dubai, UAE" className="w-56" />
 						</Row>
 						<Row label="Notice period" description="How soon can you start">
-							<RadioPills
-								label="Notice period"
-								options={NOTICE}
+							<NoticePeriodField
 								value={form.noticePeriod}
 								onChange={(v) => set("noticePeriod", v)}
-								className="justify-end"
 							/>
 						</Row>
 
@@ -157,54 +143,10 @@ export default function Profile() {
 								<p className="text-body font-medium text-ink m-0">Languages</p>
 								<p className="text-micro text-ink-3 mt-0.5 m-0">Included in CV and screening</p>
 							</div>
-							{form.languages.length > 0 && (
-								<div className="flex flex-wrap gap-1.5">
-									{form.languages.map((l) => (
-										<div key={l.name} className="inline-flex items-center gap-1.5 bg-muted text-ink rounded-full pl-2.5 pr-1 py-1 text-label font-medium">
-											<span>{l.name}</span>
-											<span className="text-ink-3">·</span>
-											<span className="text-ink-2">{l.level}</span>
-											<button
-												type="button"
-												onClick={() => set("languages", form.languages.filter((x) => x.name !== l.name))}
-												aria-label={`Remove ${l.name}`}
-												className="h-5 w-5 rounded-full flex items-center justify-center text-ink-3 hover:text-red-500 focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-1"
-											>
-												<X className="h-3 w-3" aria-hidden="true" />
-											</button>
-										</div>
-									))}
-								</div>
-							)}
-							<div className="flex flex-wrap gap-1.5" role="group" aria-label="Add a common language">
-								{COMMON_LANGS.filter((l) => !form.languages.some((x) => x.name === l)).map((l) => (
-									<button
-										key={l}
-										type="button"
-										onClick={() => addLang(l)}
-										className="px-3 h-7 rounded-full text-label font-medium border border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-									>
-										+ {l}
-									</button>
-								))}
-							</div>
-							<div className="flex gap-2 items-center flex-wrap pt-1">
-								<Input
-									placeholder="Other language…"
-									aria-label="Other language"
-									value={langName}
-									onChange={(e) => setLangName(e.target.value)}
-									onKeyDown={(e) => e.key === "Enter" && addLang(langName)}
-									className="flex-1 min-w-[160px]"
-								/>
-								<RadioPills
-									label="Language level"
-									options={LANG_LEVELS}
-									value={langLevel}
-									onChange={setLangLevel}
-								/>
-								<Button variant="outline" size="sm" onClick={() => addLang(langName)}>Add</Button>
-							</div>
+							<LanguagesField
+								value={form.languages}
+								onChange={(v) => set("languages", v)}
+							/>
 						</div>
 					</div>
 					)}
