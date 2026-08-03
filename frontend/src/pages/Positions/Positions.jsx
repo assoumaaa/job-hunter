@@ -8,7 +8,6 @@ import { PageHeader } from "components/ui/page-header";
 import { useCallApi } from "services";
 import { COUNTRIES, COUNTRY_REGIONS } from "models";
 
-const SUGGESTED = ["Backend Engineer", "Frontend Engineer", "Full Stack Engineer", "Software Engineer", "Solution Engineer", "DevOps Engineer"];
 const JOB_TYPES = [
 	{ value: "fulltime",   label: "Full-time"  },
 	{ value: "contract",   label: "Contract"   },
@@ -168,20 +167,6 @@ export default function Positions() {
 							<Button variant="outline" onClick={() => addPosition(input)}>
 								<Plus className="h-4 w-4" aria-hidden="true" /> Add
 							</Button>
-						</div>
-						<div className="flex flex-wrap gap-1.5 pt-4 mt-4 border-t border-line">
-							<span className="text-micro font-medium text-ink-3 uppercase tracking-wide self-center mr-1">Suggested</span>
-							{SUGGESTED.map((s) => (
-								<button
-									key={s}
-									type="button"
-									onClick={() => addPosition(s)}
-									disabled={!!positions.find((p) => p.label === s)}
-									className="text-label px-3 h-7 rounded-full border border-line text-ink-2 hover:bg-hovertint hover:border-line-strong hover:text-ink disabled:opacity-40 disabled:cursor-default cursor-pointer transition-colors focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-2"
-								>
-									+ {s}
-								</button>
-							))}
 						</div>
 					</SectionCard>
 
