@@ -33,7 +33,7 @@ export function agentTag(status) {
 	return null;
 }
 
-// ── sub-components ─────────────────────────────────────────────────────────
+// ── company logo ───────────────────────────────────────────────────────────
 
 export function CompanyLogo({ job, size = 36 }) {
 	const domain = domainFromUrl(job.url);
@@ -73,6 +73,105 @@ export function AtsPill({ score }) {
 	);
 }
 
+// ── pipeline ───────────────────────────────────────────────────────────────
+
+// The application pipeline as a horizontal strip. Each stage links to the
+// matching Jobs view, so the dashboard is a map into the table, not a copy of
+// it. Bars are sized relative to the largest stage so distribution reads at a
+// glance. `dotClass` uses the status-solid tokens (flip with the theme).
+const STAGES = [
+	{ key: "unscreened", label: "Unscreened", view: "all",       dot: "bg-(--st-neutral-solid)" },
+	{ key: "toApply",    label: "Ready",      view: "to_apply",  dot: "bg-accent" },
+	{ key: "applied",    label: "Applied",    view: "applied",   dot: "bg-(--st-info-solid)" },
+	{ key: "interviews", label: "Interview",  view: "interview", dot: "bg-(--st-warn-solid)" },
+	{ key: "offers",     label: "Offer",      view: "all",       dot: "bg-(--st-ok-solid)" },
+];
+
+export function Pipeline({ stats }) {
+	const navigate = useNavigate();
+	const values = STAGES.map((s) => stats[s.key] ?? 0);
+	const peak = Math.max(1, ...values);
+
+	return (
+		<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-px rounded-xl border border-line bg-line overflow-hidden shadow-raised">
+			{STAGES.map((s, i) => {
+				const value = values[i];
+				return (
+					<button
+						key={s.key}
+						type="button"
+						onClick={() => navigate(`/jobs?view=${s.view}`)}
+						className="group flex flex-col gap-3 bg-surface p-4 text-left transition-colors hover:bg-hovertint focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2"
+					>
+						<div className="flex items-center gap-1.5">
+							<span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+							<span className="text-micro font-medium text-ink-2 uppercase tracking-wide">{s.label}</span>
+						</div>
+						<div className="text-stat font-semibold text-ink font-mono tabular-nums leading-none tracking-tight">
+							{value}
+						</div>
+						<div className="h-1 rounded-full bg-muted overflow-hidden">
+							<div
+								className={`h-full rounded-full ${s.dot}`}
+								style={{ width: `${(value / peak) * 100}%`, transition: "width 0.5s ease" }}
+							/>
+						</div>
+					</button>
+				);
+			})}
+		</div>
+	);
+}
+
+// ── secondary metric tiles ─────────────────────────────────────────────────
+
+export function StatTile({ label, value, sub }) {
+	return (
+		<div className="bg-surface rounded-xl p-4 border border-line shadow-raised">
+			<div className="text-micro font-medium text-ink-2 uppercase tracking-wide">{label}</div>
+			<div className="text-stat font-semibold text-ink font-mono tabular-nums leading-none tracking-tight mt-2.5">
+				{value}
+			</div>
+			{sub && <div className="text-micro text-ink-2 mt-2">{sub}</div>}
+		</div>
+	);
+}
+
+export function GoalTile({ done, goal = 10 }) {
+	const r = 22;
+	const circ = 2 * Math.PI * r;
+	const pct = Math.min(done / goal, 1);
+
+	return (
+		<div className="bg-surface rounded-xl p-4 border border-line shadow-raised flex items-center gap-4">
+			<svg width={56} height={56} className="flex-shrink-0" aria-hidden="true">
+				<circle cx={28} cy={28} r={r} className="fill-none stroke-muted" strokeWidth={5} />
+				<circle
+					cx={28} cy={28} r={r}
+					className="fill-none stroke-accent"
+					strokeWidth={5}
+					strokeDasharray={`${pct * circ} ${circ}`}
+					strokeLinecap="round"
+					transform="rotate(-90 28 28)"
+					style={{ transition: "stroke-dasharray 0.6s ease" }}
+				/>
+				<text x={28} y={32} textAnchor="middle" className="fill-ink font-mono" style={{ fontSize: 11, fontWeight: 700 }}>
+					{Math.round(pct * 100)}%
+				</text>
+			</svg>
+			<div className="min-w-0">
+				<div className="text-micro font-medium text-ink-2 uppercase tracking-wide">Weekly goal</div>
+				<div className="text-title font-semibold text-ink mt-1 font-mono tabular-nums">
+					{done} <span className="text-ink-3 font-medium">/ {goal}</span>
+				</div>
+				<div className="text-micro text-ink-2 mt-0.5">applied this week</div>
+			</div>
+		</div>
+	);
+}
+
+// ── job row (compact, curated Next-up list) ────────────────────────────────
+
 export function ActionButton({ job }) {
 	const navigate = useNavigate();
 
@@ -83,14 +182,6 @@ export function ActionButton({ job }) {
 				Generating
 			</div>
 		);
-	}
-
-	if (job.applicationStatus === "applied") {
-		return <Badge tone="ok">Applied</Badge>;
-	}
-
-	if (job.applicationStatus === "interview") {
-		return <Badge tone="warn">Interview</Badge>;
 	}
 
 	if (job.generatedCv && job.url) {
@@ -153,52 +244,6 @@ export function JobRow({ job }) {
 
 			<div className="flex-shrink-0 min-w-[100px] flex justify-end">
 				<ActionButton job={job} />
-			</div>
-		</div>
-	);
-}
-
-export function MetricCard({ label, value, Icon, sub, accent = false }) {
-	return (
-		<div className="flex-1 min-w-[160px] bg-surface rounded-xl p-4 border border-line shadow-raised hover:border-line-strong transition-colors">
-			<div className="flex items-center justify-between mb-3">
-				<span className="text-micro font-medium text-ink-2 uppercase tracking-wide">{label}</span>
-				<div className={`h-6 w-6 rounded-md flex items-center justify-center ${accent ? "bg-accent-soft text-accent-text" : "bg-muted text-ink-2"}`}>
-					<Icon className="h-3.5 w-3.5" aria-hidden="true" />
-				</div>
-			</div>
-			<div className="text-stat font-semibold text-ink font-mono tabular-nums leading-none tracking-tight">{value}</div>
-			{sub && <div className="text-micro text-ink-2 mt-2 font-medium">{sub}</div>}
-		</div>
-	);
-}
-
-export function ProgressRing({ applied, goal = 10 }) {
-	const r = 26;
-	const circ = 2 * Math.PI * r;
-	const pct = Math.min(applied / goal, 1);
-
-	return (
-		<div className="flex-1 min-w-[200px] bg-surface rounded-xl p-4 border border-line shadow-raised flex items-center gap-4">
-			<svg width={64} height={64} className="flex-shrink-0" aria-hidden="true">
-				<circle cx={32} cy={32} r={r} className="fill-none stroke-muted" strokeWidth={5} />
-				<circle
-					cx={32} cy={32} r={r}
-					className="fill-none stroke-accent"
-					strokeWidth={5}
-					strokeDasharray={`${pct * circ} ${circ}`}
-					strokeLinecap="round"
-					transform="rotate(-90 32 32)"
-					style={{ transition: "stroke-dasharray 0.6s ease" }}
-				/>
-				<text x={32} y={36} textAnchor="middle" className="fill-ink font-mono" style={{ fontSize: 12, fontWeight: 700 }}>
-					{Math.round(pct * 100)}%
-				</text>
-			</svg>
-			<div className="min-w-0">
-				<div className="text-micro font-medium text-ink-2 uppercase tracking-wide">Weekly Goal</div>
-				<div className="text-title font-semibold text-ink mt-1 font-mono tabular-nums">{applied} <span className="text-ink-3 font-medium">/ {goal}</span></div>
-				<div className="text-micro text-ink-2 mt-0.5">applications</div>
 			</div>
 		</div>
 	);
