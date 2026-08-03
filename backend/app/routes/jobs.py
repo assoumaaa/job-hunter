@@ -28,7 +28,7 @@ from ..schemas.job import (
     TweakRequest,
     TweakResponse,
 )
-from ..services import claude, intake, job_extractor, pdf_generator
+from ..services import claude, credentials, intake, job_extractor, pdf_generator
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -219,15 +219,19 @@ def delete_jobs(
 @router.post("/extract-url", response_model=ExtractedJobResponse)
 def extract_url(
     body: ExtractUrlRequest,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     url = (body.url or "").strip()
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        extracted = job_extractor.extract_from_url(url)
+        with credentials.active(credentials.resolve(db, current_user)):
+            extracted = job_extractor.extract_from_url(url)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except intake.IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     except Exception as e:
         raise HTTPException(
             status_code=502,
