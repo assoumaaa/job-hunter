@@ -85,7 +85,10 @@ class JobStats(BaseModel):
     toApply: int
     applied: int
     interviews: int
+    offers: int
     unscreened: int
+    screened: int
+    appliedThisWeek: int
     avgAts: int | None = None
 
 

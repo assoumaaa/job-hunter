@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func
@@ -49,7 +49,10 @@ def _job_filters(user: User, company: str, title: str, view: str) -> list:
     if title:
         conds.append(Job.title.ilike(f"%{title}%"))
     if view == "to_apply":
-        conds += [Job.relevanceStatus.in_(["good_fit", "maybe"]), Job.applicationStatus == "new"]
+        conds += [
+            Job.relevanceStatus.in_(["good_fit", "maybe"]),
+            Job.applicationStatus == "new",
+        ]
     elif view == "applied":
         conds.append(Job.applicationStatus == "applied")
     elif view == "interview":
@@ -151,14 +154,21 @@ def get_job_stats(
         .filter(Job.userId == current_user.id, Job.atsScore.isnot(None))
         .scalar()
     )
+    week_ago = datetime.utcnow() - timedelta(days=7)
     return JobStats(
         total=count(),
         toApply=count(
-            Job.relevanceStatus.in_(["good_fit", "maybe"]), Job.applicationStatus == "new"
+            Job.relevanceStatus.in_(["good_fit", "maybe"]),
+            Job.applicationStatus == "new",
         ),
         applied=count(Job.applicationStatus == "applied"),
         interviews=count(Job.applicationStatus == "interview"),
+        offers=count(Job.applicationStatus == "offer"),
         unscreened=count(Job.relevanceStatus == "unscreened"),
+        screened=count(Job.relevanceStatus != "unscreened"),
+        appliedThisWeek=count(
+            Job.applicationStatus == "applied", Job.applicationDate >= week_ago
+        ),
         avgAts=round(avg) if avg is not None else None,
     )
 
