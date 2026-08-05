@@ -33,6 +33,54 @@ def test_merge_identity_grafts_header_and_languages():
     assert merged["languages"] == [{"name": "English", "level": "Native"}]
 
 
+def test_merge_identity_ignores_generated_facts():
+    """Education, certifications and each role's dates are copied from the base
+    CV, so a model that abbreviates or invents them can't reach the document."""
+    generated = {
+        "education": [{"degree": "BSc Computer Engineering", "year": "2023"}],
+        "certifications": [{"title": "Invented Cert", "org": "Nowhere"}],
+        "experience": [
+            {"company": "Renamed", "location": "Mars", "period": "2020", "bullets": ["tailored"]}
+        ],
+    }
+    base = {
+        "education": [
+            {"degree": "Bachelor of Science in Computer Engineering", "year": "Sep 2019 - Jun 2023"}
+        ],
+        "certifications": [],
+        "experience": [
+            {"company": "Odoo", "location": "Dubai, UAE", "period": "Mar 2024 - Present", "bullets": ["stale"]}
+        ],
+    }
+    merged = resume.merge_identity(generated, base)
+
+    assert merged["education"] == base["education"]  # full degree + range survive
+    assert merged["certifications"] == []  # invented cert dropped
+    role = merged["experience"][0]
+    assert (role["company"], role["location"], role["period"]) == (
+        "Odoo",
+        "Dubai, UAE",
+        "Mar 2024 - Present",
+    )
+    assert role["bullets"] == ["tailored"]  # only the prose comes from generation
+
+
+def test_merge_identity_keeps_the_base_job_list():
+    """Job count and order come from the base CV — generation can't drop a role."""
+    generated = {"experience": [{"company": "Odoo", "title": "Consultant", "bullets": ["a"]}]}
+    base = {
+        "experience": [
+            {"company": "Odoo", "title": "Software Engineer", "bullets": ["x"]},
+            {"company": "Edenred", "title": "Intern", "bullets": ["y"]},
+        ]
+    }
+    merged = resume.merge_identity(generated, base)
+
+    assert [r["company"] for r in merged["experience"]] == ["Odoo", "Edenred"]
+    assert merged["experience"][0]["title"] == "Consultant"  # archetype retitle honoured
+    assert merged["experience"][1]["bullets"] == ["y"]  # unwritten role falls back to base
+
+
 def test_parse_schema_is_the_single_source():
     # cv_parser shows the model the one canonical schema.
     assert cv_parser.CV_SCHEMA is resume.SCHEMA_JSON

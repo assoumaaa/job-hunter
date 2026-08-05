@@ -115,12 +115,13 @@ base CV's fuller wording over a shorter paraphrase.
 - Summary: 2-3 lines (~200 characters)
 - Bullets can wrap to 2 lines — that's fine. But avoid wrapping where just 1-2 words spill to line 2. Either make it fit 1 line or fill out 2 full lines with more useful detail.
 - If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
-- Education and certifications: 1 line each, but keep the base CV's full degree name and full date range — never abbreviate them.
 - Skills: 3-4 categories (do NOT put Languages in skills — languages are handled separately). Each category should fill its line.
+- Education, certifications, contact header and languages are NOT yours to write. They are copied verbatim from the base CV and appended after your output, so budget roughly 5-7 lines of page space for them.
 
 ### Structure rules
 - PRESERVE the same jobs in the same reverse-chronological order
 - BULLET COUNT IS FIXED: keep the exact same number of bullets per role as the base CV -- never add or remove bullets
+- Per role you write ONLY the bullets and the title. Company, location and dates are copied from the base CV; echo the company name so roles line up, and never alter it.
 - NEVER invent projects, metrics, or experience not in the base CV
 
 ### Role-type decision (make it ONCE, apply it EVERYWHERE)
@@ -193,16 +194,10 @@ Style: No em dashes, semicolons, exclamation marks. No hedging. No corporate-spe
 {{
   "summary": "...",
   "experience": [
-    {{"company": "...", "title": "...", "location": "...", "period": "...", "bullets": ["..."]}}
+    {{"company": "...", "title": "...", "bullets": ["..."]}}
   ],
   "projects": [
     {{"name": "...", "badge": "...", "description": "...", "tech": "..."}}
-  ],
-  "education": [
-    {{"degree": "...", "institution": "...", "year": "...", "description": "..."}}
-  ],
-  "certifications": [
-    {{"title": "...", "org": "...", "year": "..."}}
   ],
   "skills": [
     {{"category": "...", "items": ["..."]}}

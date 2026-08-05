@@ -121,15 +121,36 @@ def normalize(raw: dict | None) -> dict:
 
 
 def merge_identity(generated: dict, base: dict) -> dict:
-    """Graft factual identity (header + languages) from the base CV onto freshly
-    generated sections.
+    """Graft the factual half of the CV from the base document onto freshly
+    generated prose.
 
-    Generation tailors the prose; identity is copied, never invented — so the
-    generation schema omits these two sections and this is where they rejoin the
-    document. Previously inline in the generate route.
+    Generation writes judgement — the summary, the skills grouping, and each
+    role's bullets (plus its title, which the archetype rule may rewrite).
+    Everything else is fact: copied verbatim here and omitted from the
+    generation schema, so a model slip can't abbreviate a degree, reword a
+    date range, drop a job, or reorder the history.
     """
     merged = dict(generated or {})
     base = base or {}
+
     merged["header"] = base.get("header", {})
     merged["languages"] = base.get("languages", [])
+    merged["education"] = base.get("education", [])
+    merged["certifications"] = base.get("certifications", [])
+
+    # The base CV fixes the job list, its order, and each role's facts;
+    # generation only supplies the bullets and the (possibly retitled) role.
+    generated_roles = generated.get("experience") or []
+    merged["experience"] = [
+        {
+            **base_role,
+            "title": generated_role.get("title") or base_role.get("title", ""),
+            "bullets": generated_role.get("bullets")
+            or base_role.get("bullets", []),
+        }
+        for base_role, generated_role in (
+            (role, generated_roles[i] if i < len(generated_roles) else {})
+            for i, role in enumerate(base.get("experience") or [])
+        )
+    ]
     return merged
