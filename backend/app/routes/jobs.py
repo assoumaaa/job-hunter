@@ -330,6 +330,21 @@ def fetch_jobs(
     return SyncResult(inserted=outcome.inserted, skipped=outcome.skipped)
 
 
+def _chat_with_user_keys(db: Session, user: User, fn, *args, **kwargs):
+    """Run one chat-edit call with the signed-in user's credentials installed.
+
+    Without the bundle the adapter falls back to the .env keys, which don't
+    exist on a per-user deployment — `require_anthropic` then raises an
+    IntakeError that used to escape unhandled and reach the browser as a bare
+    500. Map it to its real status so the user is told to add a key instead.
+    """
+    try:
+        with credentials.active(credentials.resolve(db, user)):
+            return fn(*args, **kwargs)
+    except intake.IntakeError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
+
+
 @router.post("/{job_id}/tweak", response_model=TweakResponse)
 def tweak_job_doc(
     job_id: str,
@@ -361,7 +376,10 @@ def tweak_job_doc(
             raise HTTPException(status_code=400, detail="Job has no generated CV yet")
         current_cv = json.loads(job.generatedCv)
         history = json.loads(job.chatCv) if job.chatCv else []
-        result = claude.chat_edit_cv(
+        result = _chat_with_user_keys(
+            db,
+            current_user,
+            claude.chat_edit_cv,
             history,
             current_cv,
             base_cv,
@@ -391,7 +409,10 @@ def tweak_job_doc(
                 status_code=400, detail="Job has no generated cover letter yet"
             )
         history = json.loads(job.chatCl) if job.chatCl else []
-        result = claude.chat_edit_cl(
+        result = _chat_with_user_keys(
+            db,
+            current_user,
+            claude.chat_edit_cl,
             history,
             job.generatedCl,
             base_cv,
