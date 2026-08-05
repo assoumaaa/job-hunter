@@ -108,12 +108,15 @@ Classify the role into one (or hybrid of two):
 ## STEP 3: TAILOR CV
 
 ### 1-PAGE CONSTRAINT (CRITICAL)
-The output CV MUST fit on exactly 1 page. This overrides everything else:
-- Summary: max 2-3 lines (~200 characters)
+The output CV MUST FILL exactly 1 page — no more, and no less. Target 90-100%
+of the page. A half-empty page reads as a thin resume and is just as wrong as
+an overflow, so do NOT shorten to be safe: when the space is there, prefer the
+base CV's fuller wording over a shorter paraphrase.
+- Summary: 2-3 lines (~200 characters)
 - Bullets can wrap to 2 lines — that's fine. But avoid wrapping where just 1-2 words spill to line 2. Either make it fit 1 line or fill out 2 full lines with more useful detail.
 - If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
-- Keep education and certifications concise (1 line each)
-- Skills: 3 categories max (do NOT put Languages in skills — languages are handled separately). Each category should fit on 1 line.
+- Education and certifications: 1 line each, but keep the base CV's full degree name and full date range — never abbreviate them.
+- Skills: 3-4 categories (do NOT put Languages in skills — languages are handled separately). Each category should fill its line.
 
 ### Structure rules
 - PRESERVE the same jobs in the same reverse-chronological order
@@ -135,7 +138,7 @@ All other job titles NEVER change.
 Distribute the extracted keywords deliberately:
 - Summary: inject top 5 keywords naturally
 - First bullet of each role: inject 1-2 keywords
-- Skills section: mirror JD terminology exactly
+- Skills section: mirror JD terminology ONLY for skills the base CV already claims. NEVER add a tool, framework, cloud provider, or practice the base CV does not list — not even if the JD stresses it. Rephrasing a real skill in the JD's words is fine; adding an unclaimed one is a fabrication and disqualifies the candidate.
 - Reformulate existing experience with JD vocabulary. Examples:
   - JD says "CI/CD pipelines", CV says "automated deployment" -> "CI/CD pipeline automation"
   - JD says "stakeholder management", CV says "collaborated with teams" -> "stakeholder management across engineering, product, and operations"
