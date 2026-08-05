@@ -101,10 +101,11 @@ def compile_cv(
     """Render structured CV data to PDF via WeasyPrint.
 
     WYSIWYG by default: renders the submitted data verbatim with CSS auto-fit
-    only. Content trimming happens once at generation/tweak time and is
-    persisted there, so every view of a stored CV shows identical content.
-    `?trim=true` (explicit opt-in) lets Haiku shorten wording at render time
-    without saving — the result won't match the stored data.
+    only. Content trimming happens once at generation time and is persisted
+    there; tweaks store the user's edit verbatim and are never trimmed, so a
+    chain of tweaks can't erode the text. `?trim=true` (explicit opt-in) lets
+    Haiku shorten wording at render time without saving — the result won't
+    match the stored data.
     """
     try:
         pdf_bytes, _ = pdf_generator.fit_and_render(

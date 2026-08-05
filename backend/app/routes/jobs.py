@@ -28,7 +28,7 @@ from ..schemas.job import (
     TweakRequest,
     TweakResponse,
 )
-from ..services import claude, credentials, intake, job_extractor, pdf_generator
+from ..services import claude, credentials, intake, job_extractor
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -375,12 +375,11 @@ def tweak_job_doc(
             # Snapshot original on the first actual edit
             if not job.originalCv:
                 job.originalCv = job.generatedCv
-            # Re-fit after the edit so the stored CV stays one page. The trimmed
-            # JSON is what we persist, so the preview matches exactly.
-            _, updated = pdf_generator.fit_and_render(
-                result["updated_cv"], trim_callback=claude.trim_resume_for_fit
-            )
-            job.generatedCv = json.dumps(updated)
+            # Persist the edit verbatim. Re-fitting here trimmed the CV and
+            # stored the trimmed copy, so every tweak shrank the previous
+            # tweak's output and content could only ever erode. Fitting belongs
+            # at render time (POST /cv/compile), which leaves the text intact.
+            job.generatedCv = json.dumps(result["updated_cv"])
         history = history + [
             {"role": "user", "content": prompt},
             {"role": "assistant", "content": message},
