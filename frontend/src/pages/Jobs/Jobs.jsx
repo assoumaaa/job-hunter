@@ -163,6 +163,9 @@ export default function Jobs() {
 	const [api] = useJobsApi();
 	const [cvApi] = useCvApi();
 	const [profileApi] = useProfileApi();
+	// Declared before colDefs: that hook lists `contact` in its dependency array,
+	// and reading a `const` above its own line throws at render (TDZ).
+	const [contact] = useResource(() => profileApi.contact(), [], null);
 	const loading = useLoading();
 	const { enqueueSnackbar } = useSnackbar();
 	const navigate = useNavigate();
@@ -500,7 +503,6 @@ export default function Jobs() {
 		refresh();
 	};
 
-	const [contact] = useResource(() => profileApi.contact(), [], null);
 
 	const toGenerate = jobs.filter((j) => selectedIds.includes(j.id) && !j.hasGeneratedCv).map((j) => j.id);
 	const toRegen = jobs.filter((j) => selectedIds.includes(j.id) && j.hasGeneratedCv).map((j) => j.id);
