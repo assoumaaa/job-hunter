@@ -7,7 +7,8 @@ import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { RadioPills } from "components/ui/radio-pills";
 import { LanguagesField, NoticePeriodField } from "./ProfileFields";
-import { useCallApi } from "services";
+import { parseJsonList } from "models/job";
+import { useProfileApi, useResource } from "services";
 
 const SENIORITY = ["Junior", "Mid", "Senior", "Lead", "Principal"].map((v) => ({ value: v, label: v }));
 
@@ -39,46 +40,37 @@ export default function Profile() {
 	});
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
-	const [firstLoad, setFirstLoad] = useState(true);
 
-	const [callApi] = useCallApi();
+	const [api] = useProfileApi();
 
 	const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
 
+	const [stored, { firstLoad }] = useResource(() => api.get(), []);
 	useEffect(() => {
-		callApi("/profile", {
-			onSuccess: (d) => {
-				setForm({
-					fullName: d.fullName ?? "",
-					linkedinUrl: d.linkedinUrl ?? "",
-					githubUrl: d.githubUrl ?? "",
-					totalYearsExperience: d.totalYearsExperience?.toString() ?? "",
-					seniority: d.seniority ?? "",
-					currentLocation: d.currentLocation ?? "",
-					noticePeriod: d.noticePeriod ?? "",
-					languages: d.languages ? JSON.parse(d.languages) : [],
-				});
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
+		if (!stored) return;
+		setForm({
+			fullName: stored.fullName ?? "",
+			linkedinUrl: stored.linkedinUrl ?? "",
+			githubUrl: stored.githubUrl ?? "",
+			totalYearsExperience: stored.totalYearsExperience?.toString() ?? "",
+			seniority: stored.seniority ?? "",
+			currentLocation: stored.currentLocation ?? "",
+			noticePeriod: stored.noticePeriod ?? "",
+			languages: parseJsonList(stored.languages),
 		});
-	}, []);
+	}, [stored]);
 
 	const save = async () => {
 		setSaving(true);
-		await callApi("/profile", {
-			method: "post",
-			json: {
-				fullName: form.fullName || null,
-				linkedinUrl: form.linkedinUrl || null,
-				githubUrl: form.githubUrl || null,
-				totalYearsExperience: form.totalYearsExperience ? parseInt(form.totalYearsExperience) : null,
-				seniority: form.seniority || null,
-				currentLocation: form.currentLocation || null,
-				noticePeriod: form.noticePeriod || null,
-				languages: JSON.stringify(form.languages),
-			},
-			success: "Profile saved",
+		await api.save({
+			fullName: form.fullName || null,
+			linkedinUrl: form.linkedinUrl || null,
+			githubUrl: form.githubUrl || null,
+			totalYearsExperience: form.totalYearsExperience ? parseInt(form.totalYearsExperience) : null,
+			seniority: form.seniority || null,
+			currentLocation: form.currentLocation || null,
+			noticePeriod: form.noticePeriod || null,
+			languages: JSON.stringify(form.languages),
 		});
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);

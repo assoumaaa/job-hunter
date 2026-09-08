@@ -46,4 +46,5 @@ def delete_position(
     db.commit()
     if not deleted:
         raise HTTPException(status_code=404, detail="Position not found")
+    
     return {"ok": True}

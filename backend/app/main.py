@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
@@ -22,6 +22,7 @@ from .routes import (
     profile_router,
     settings_router,
 )
+from .services.errors import IntakeError
 
 
 def _ensure_jobs_tweak_columns() -> None:
@@ -98,6 +99,16 @@ def create_app() -> FastAPI:
     app.include_router(job_settings_router, prefix="/api")
     app.include_router(cv_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
+
+    # A domain precondition carries the status the client should see. Mapping it
+    # here means no handler has to remember to catch it — and a handler that
+    # wraps its body in `except Exception` can no longer downgrade a 422 ("add
+    # your API key") into a 500.
+    @app.exception_handler(IntakeError)
+    async def intake_error(request: Request, exc: IntakeError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code, content={"detail": exc.message}
+        )
 
     @app.get("/health")
     def health():

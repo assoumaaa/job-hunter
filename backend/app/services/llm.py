@@ -26,6 +26,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -153,12 +154,41 @@ class AnthropicLLM:
         return _decode(client.messages.create(**kwargs))
 
 
+def _call_text(kwargs: dict) -> str:
+    """Everything the adapter was asked, flattened for substring matching."""
+    parts: list[str] = []
+    system = kwargs.get("system")
+    if isinstance(system, str):
+        parts.append(system)
+    elif isinstance(system, list):
+        parts += [b.get("text", "") for b in system if isinstance(b, dict)]
+    for message in kwargs.get("messages") or []:
+        content = message.get("content")
+        if isinstance(content, str):
+            parts.append(content)
+    return "\n".join(parts)
+
+
+def _tool_names(kwargs: dict) -> set[str]:
+    return {t.get("name", "") for t in (kwargs.get("tools") or []) if isinstance(t, dict)}
+
+
 class FakeLLM:
     """Test adapter. Feed it canned replies; it records every call it receives.
 
     A reply may be a ``str`` (becomes ``text``), a ``dict`` (becomes both JSON
-    ``text`` and ``tool_input``), or an ``LLMResult``. Replies are consumed in
-    order; once exhausted, ``default`` is returned for every further call.
+    ``text`` and ``tool_input``), or an ``LLMResult``.
+
+    Two ways to answer, checked in this order:
+
+    1. **Routes** — ``when(reply=..., model=..., tool=..., prompt=...)`` answers
+       by *what was asked*, in registration order, first match winning. Use this
+       for anything that crosses more than one module: a pipeline fires calls in
+       an order that depends on the data (a base CV with no conditional bullets
+       skips one call; an approved score skips the critique pass), and a
+       positional queue silently shifts when a branch is or isn't taken.
+    2. **The queue** — replies are then consumed in order, and once exhausted
+       ``default`` answers every further call. Fine for single-call tests.
     """
 
     def __init__(
@@ -168,7 +198,36 @@ class FakeLLM:
     ) -> None:
         self._replies = list(replies or [])
         self._default = default
+        self._routes: list[tuple[Callable[[dict], bool], str | dict | LLMResult]] = []
         self.calls: list[dict] = []
+
+    def when(
+        self,
+        reply: str | dict | LLMResult,
+        *,
+        model: str | None = None,
+        tool: str | None = None,
+        prompt: str | None = None,
+        predicate: Callable[[dict], bool] | None = None,
+    ) -> FakeLLM:
+        """Answer `reply` to calls matching every matcher given. Chainable.
+
+        `prompt` matches a substring of the system blocks and message contents
+        combined, which is how a test names the step it means ("## ARCHETYPE",
+        "CONDITIONS:") without depending on call order.
+        """
+
+        def matches(kwargs: dict) -> bool:
+            if model is not None and kwargs.get("model") != model:
+                return False
+            if tool is not None and tool not in _tool_names(kwargs):
+                return False
+            if prompt is not None and prompt not in _call_text(kwargs):
+                return False
+            return predicate(kwargs) if predicate else True
+
+        self._routes.append((matches, reply))
+        return self
 
     @staticmethod
     def _coerce(reply: str | dict | LLMResult) -> LLMResult:
@@ -180,6 +239,9 @@ class FakeLLM:
 
     def run(self, **kwargs) -> LLMResult:
         self.calls.append(kwargs)
+        for matches, reply in self._routes:
+            if matches(kwargs):
+                return self._coerce(reply)
         reply = self._replies.pop(0) if self._replies else self._default
         return self._coerce(reply)
 
@@ -280,6 +342,21 @@ def complete_json(
     )
 
 
+def complete_json_array(
+    *,
+    model: str,
+    messages: list[dict],
+    system: System | None = None,
+    max_tokens: int = 4096,
+) -> list:
+    """Return the model's reply parsed as a JSON array ([] if unparseable)."""
+    return extract_json_array(
+        complete_text(
+            model=model, messages=messages, system=system, max_tokens=max_tokens
+        )
+    )
+
+
 def complete_tool(
     *,
     model: str,
@@ -320,9 +397,25 @@ def extract_json(text: str) -> dict:
     except (json.JSONDecodeError, ValueError):
         pass
     # Find the outermost { ... } with balanced braces
+    span = first_object_span(stripped)
+    if span:
+        start, end = span
+        try:
+            return json.loads(stripped[start:end])
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+
+def first_object_span(text: str) -> tuple[int, int] | None:
+    """The (start, end) slice of the first balanced `{...}` run, or None.
+
+    Callers that need the *text after* the JSON — not just the JSON — use this
+    rather than re-walking the braces themselves.
+    """
     depth = 0
     start = None
-    for i, c in enumerate(stripped):
+    for i, c in enumerate(text):
         if c == "{":
             if depth == 0:
                 start = i
@@ -330,8 +423,40 @@ def extract_json(text: str) -> dict:
         elif c == "}":
             depth -= 1
             if depth == 0 and start is not None:
-                try:
-                    return json.loads(stripped[start : i + 1])
-                except json.JSONDecodeError:
-                    start = None
-    return {}
+                return start, i + 1
+    return None
+
+
+def extract_json_array(text: str) -> list:
+    """Extract a JSON array from a reply, salvaging a malformed one where we can.
+
+    The model is asked for an array and usually sends one. When it doesn't, it
+    fails in predictable ways, so we try in order: the reply as-is; the reply
+    wrapped in brackets (it emitted bare comma-separated objects); then every
+    individual object scavenged out of the text. A lone object becomes a
+    one-element array. Returns [] when nothing parses.
+    """
+    stripped = strip_fences(text)
+    if not stripped:
+        return []
+
+    parsed = None
+    for candidate in (stripped, f"[{stripped}]"):
+        try:
+            parsed = json.loads(candidate)
+            break
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    if parsed is None:
+        # Last resort: pull out every object we can, one at a time.
+        parsed = []
+        for match in re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", stripped):
+            try:
+                parsed.append(json.loads(match.group()))
+            except json.JSONDecodeError:
+                continue
+
+    if isinstance(parsed, dict):
+        return [parsed]
+    return parsed if isinstance(parsed, list) else []

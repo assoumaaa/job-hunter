@@ -1,42 +1,26 @@
 import { ArrowRight, ScanSearch, Sparkles } from "lucide-react";
 import { GoalTile, JobRow, Pipeline, StatTile } from "./DashboardWidgets";
-import { useCallApi } from "services";
-import { useEffect, useState } from "react";
+import { useJobsApi, useResource } from "services";
 import { useNavigate } from "react-router-dom";
 import { useUser } from "@clerk/clerk-react";
 
 import { CardSkeleton } from "components/ui/skeleton";
 import { EmptyState } from "components/ui/empty-state";
-
-const EMPTY_STATS = {
-	total: 0, toApply: 0, applied: 0, interviews: 0, offers: 0,
-	unscreened: 0, screened: 0, appliedThisWeek: 0, avgAts: null,
-};
+import { ATS_BENCHMARK, EMPTY_STATS } from "models/job";
 
 export default function Dashboard() {
-	const [stats, setStats] = useState(EMPTY_STATS);
-	const [nextUp, setNextUp] = useState([]);
-	const [firstLoad, setFirstLoad] = useState(true);
-	const [callApi] = useCallApi();
+	const [api] = useJobsApi();
 	const navigate = useNavigate();
 	const { user } = useUser();
 
-	useEffect(() => {
-		callApi("/jobs/stats", {
-			error: "Failed to load stats",
-			onSuccess: (s) => setStats(s ?? EMPTY_STATS),
-		});
-		// A short, curated shortlist — the full list lives on the Jobs page.
-		callApi("/jobs", {
-			params: { view: "to_apply", sort: "atsScore", direction: "desc", page: 1, pageSize: 3 },
-			error: "Failed to load jobs",
-			onSuccess: (res) => {
-				setNextUp(res.items ?? []);
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
-		});
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+	const [stats] = useResource(() => api.stats(), [], EMPTY_STATS);
+	// A short, curated shortlist — the full list lives on the Jobs page.
+	const [shortlist, { firstLoad }] = useResource(
+		() => api.list({ view: "to_apply", sort: "atsScore", direction: "desc", pageSize: 3 }),
+		[],
+		{ items: [], total: 0 },
+	);
+	const nextUp = shortlist.items;
 
 	const firstName = user?.firstName || (user?.fullName?.split(" ")[0]) || "there";
 	const interviewRate = stats.applied > 0 ? Math.round((stats.interviews / stats.applied) * 100) : null;
@@ -101,7 +85,7 @@ export default function Dashboard() {
 								<StatTile
 									label="Avg match"
 									value={stats.avgAts != null ? `${stats.avgAts}%` : "-"}
-									sub={stats.avgAts >= 80 ? "Above benchmark" : stats.avgAts != null ? "Room to optimize" : "No scores yet"}
+									sub={stats.avgAts >= ATS_BENCHMARK ? "Above benchmark" : stats.avgAts != null ? "Room to optimize" : "No scores yet"}
 								/>
 								<StatTile
 									label="Interview rate"

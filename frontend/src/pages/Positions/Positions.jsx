@@ -5,7 +5,8 @@ import { Button } from "components/ui/button";
 import { CardSkeleton } from "components/ui/skeleton";
 import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
-import { useCallApi } from "services";
+import { parseJsonList } from "models/job";
+import { useProfileApi, useResource } from "services";
 import { COUNTRIES, COUNTRY_REGIONS } from "models";
 
 const JOB_TYPES = [
@@ -40,7 +41,6 @@ function SectionCard({ title, description, action, children, padding = "p-5" }) 
 }
 
 export default function Positions() {
-	const [positions, setPositions] = useState([]);
 	const [input, setInput] = useState("");
 	const [selectedCountries, setSelectedCountries] = useState([]);
 	const [selectedJobTypes, setSelectedJobTypes] = useState(["fulltime"]);
@@ -48,14 +48,19 @@ export default function Positions() {
 	const [keywordInput, setKeywordInput] = useState("");
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
-	const [firstLoad, setFirstLoad] = useState(true);
 
 	const kwRef = useRef(null);
-	const [callApi] = useCallApi();
+	const [api] = useProfileApi();
+
+	const [positions, { firstLoad, setData: setPositions }] = useResource(
+		() => api.positions(),
+		[],
+		[],
+	);
 
 	const addPosition = async (label) => {
 		if (!label.trim() || positions.find((p) => p.label === label)) return;
-		const pos = await callApi("/positions", { method: "post", json: { label } });
+		const pos = await api.addPosition(label);
 		if (pos) {
 			setPositions((prev) => [...prev, pos]);
 			setInput("");
@@ -63,7 +68,7 @@ export default function Positions() {
 	};
 
 	const removePosition = async (id) => {
-		await callApi("/positions", { method: "delete", json: { id } });
+		await api.removePosition(id);
 		setPositions((prev) => prev.filter((p) => p.id !== id));
 	};
 
@@ -82,33 +87,20 @@ export default function Positions() {
 		setKeywordInput("");
 	};
 
+	const [jobSettings] = useResource(() => api.jobSettings(), [], null);
 	useEffect(() => {
-		callApi("/positions", {
-			onSuccess: (data) => {
-				setPositions(data);
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
-		});
-		callApi("/job-settings", {
-			onSuccess: (d) => {
-				setSelectedCountries(d.preferredLocations ? JSON.parse(d.preferredLocations) : []);
-				setSelectedJobTypes(d.jobTypes ? JSON.parse(d.jobTypes) : ["fulltime"]);
-				setKeywords(d.keywords ? JSON.parse(d.keywords) : []);
-			},
-		});
-	}, []);
+		if (!jobSettings) return;
+		setSelectedCountries(parseJsonList(jobSettings.preferredLocations));
+		setSelectedJobTypes(parseJsonList(jobSettings.jobTypes, ["fulltime"]));
+		setKeywords(parseJsonList(jobSettings.keywords));
+	}, [jobSettings]);
 
 	const saveSettings = async () => {
 		setSaving(true);
-		await callApi("/job-settings", {
-			method: "post",
-			json: {
-				preferredLocations: JSON.stringify(selectedCountries),
-				jobTypes: JSON.stringify(selectedJobTypes),
-				keywords: JSON.stringify(keywords),
-			},
-			success: "Settings saved",
+		await api.saveJobSettings({
+			preferredLocations: JSON.stringify(selectedCountries),
+			jobTypes: JSON.stringify(selectedJobTypes),
+			keywords: JSON.stringify(keywords),
 		});
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);

@@ -1,11 +1,11 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
 import { Bolt as BoltIcon, ChevronLeft, ChevronRight, Pencil, Plus, RefreshCw, RotateCcw, ScanSearch, Search, Trash2 } from "lucide-react";
 import StatusChip, { APP_COLORS, APP_OPTIONS, RELEVANCE_COLORS, RELEVANCE_META, RELEVANCE_OPTIONS } from "./StatusChip";
-import { readToken, useCallApi, useLoading, useTheme } from "services";
+import { readToken, useCvApi, useJobsApi, useLoading, useProfileApi, useResource, useTheme } from "services";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-const VIEW_VALUES = ["to_apply", "applied", "interview", "rejected", "no_fit", "all"];
+import { EMPTY_STATS, formatAppliedDate, shortLocation, toDateInputValue, VIEWS } from "models/job";
 
 import AddJobDialog from "./AddJobDialog";
 import { AgGridReact } from "ag-grid-react";
@@ -104,16 +104,6 @@ function FetchDropdown({ loading, onFetch }) {
 	);
 }
 
-function formatAppliedDate(value) {
-	if (!value) return "";
-	const d = new Date(value);
-	if (isNaN(d.getTime())) return "";
-	const dd = String(d.getDate()).padStart(2, "0");
-	const mm = String(d.getMonth() + 1).padStart(2, "0");
-	const yy = String(d.getFullYear()).slice(-2);
-	return `${dd} / ${mm} / ${yy}`;
-}
-
 function AppliedDateCell({ value, onChange }) {
 	const [editing, setEditing] = useState(false);
 	const inputRef = useRef(null);
@@ -131,7 +121,7 @@ function AppliedDateCell({ value, onChange }) {
 				type="date"
 				aria-label="Applied date"
 				className="text-body border-none bg-transparent cursor-pointer w-full text-ink-2"
-				value={value ? new Date(value).toISOString().slice(0, 10) : ""}
+				value={toDateInputValue(value)}
 				onChange={(e) => {
 					onChange(e.target.value ? new Date(e.target.value).toISOString() : null);
 				}}
@@ -153,13 +143,7 @@ function AppliedDateCell({ value, onChange }) {
 	);
 }
 
-const EMPTY_STATS = { total: 0, toApply: 0, applied: 0, interviews: 0, unscreened: 0, avgAts: null };
-
 export default function Jobs() {
-	const [jobs, setJobs] = useState([]);
-	const [total, setTotal] = useState(0);
-	const [firstLoad, setFirstLoad] = useState(true);
-	const [contact, setContact] = useState(null);
 	const [selectedIds, setSelectedIds] = useState([]);
 	const [screeningIds, setScreeningIds] = useState(new Set());
 	const [filterCompany, setFilterCompany] = useState("");
@@ -168,17 +152,17 @@ export default function Jobs() {
 	const [debTitle, setDebTitle] = useState("");
 	// The Overview page deep-links here with ?view=… — honor it as the initial filter.
 	const [searchParams] = useSearchParams();
-	const initialView = VIEW_VALUES.includes(searchParams.get("view")) ? searchParams.get("view") : "to_apply";
+	const initialView = VIEWS.includes(searchParams.get("view")) ? searchParams.get("view") : "to_apply";
 	const [viewFilter, setViewFilter] = useState(initialView);
 	const [sort, setSort] = useState("fetchedAt");
 	const [direction, setDirection] = useState("desc");
 	const [page, setPage] = useState(1);
-	const [stats, setStats] = useState(EMPTY_STATS);
-	const [reloadKey, setReloadKey] = useState(0);
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [showAddJob, setShowAddJob] = useState(false);
 
-	const [callApi] = useCallApi();
+	const [api] = useJobsApi();
+	const [cvApi] = useCvApi();
+	const [profileApi] = useProfileApi();
 	const loading = useLoading();
 	const { enqueueSnackbar } = useSnackbar();
 	const navigate = useNavigate();
@@ -210,27 +194,6 @@ export default function Jobs() {
 		[resolved],
 	);
 
-	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-	const jobsRef = useRef([]);
-	useEffect(() => {
-		jobsRef.current = jobs;
-	}, [jobs]);
-
-	const fetchStats = useCallback(() => {
-		callApi("/jobs/stats", {
-			suppressError: true,
-			onSuccess: (s) => setStats(s ?? EMPTY_STATS),
-		});
-	}, [callApi]);
-
-	// Bump reloadKey to refetch the current page; pair with fetchStats after any
-	// mutation so both the list and the aggregate counts stay correct.
-	const refresh = useCallback(() => {
-		setReloadKey((k) => k + 1);
-		fetchStats();
-	}, [fetchStats]);
-
 	// Debounce the company/title inputs so typing doesn't spam the API, and reset
 	// to page 1 whenever the settled search terms change.
 	useEffect(() => {
@@ -242,10 +205,10 @@ export default function Jobs() {
 		return () => clearTimeout(t);
 	}, [filterCompany, filterTitle]);
 
-	// Fetch the current page whenever the server-side query changes.
-	useEffect(() => {
-		callApi("/jobs", {
-			params: {
+	// The current page, refetched whenever the server-side query changes.
+	const [list, { firstLoad, refetch: refetchList, setData: setList }] = useResource(
+		() =>
+			api.list({
 				company: debCompany,
 				title: debTitle,
 				view: viewFilter,
@@ -253,59 +216,66 @@ export default function Jobs() {
 				direction,
 				page,
 				pageSize: PAGE_SIZE,
-			},
-			error: "Failed to load jobs",
-			onSuccess: (res) => {
-				setJobs(res.items ?? []);
-				setTotal(res.total ?? 0);
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
-		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [debCompany, debTitle, viewFilter, sort, direction, page, reloadKey]);
+			}),
+		[debCompany, debTitle, viewFilter, sort, direction, page],
+		{ items: [], total: 0 },
+	);
+	const jobs = list.items;
+	const total = list.total;
+
+	const [stats, { refetch: refetchStats }] = useResource(() => api.stats(), [], EMPTY_STATS);
+
+	// After any mutation, both the page and the aggregate counts are stale.
+	const refresh = useCallback(() => {
+		refetchList();
+		refetchStats();
+	}, [refetchList, refetchStats]);
+
+	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+	const jobsRef = useRef([]);
+	useEffect(() => {
+		jobsRef.current = jobs;
+	}, [jobs]);
 
 	// If a mutation shrinks the result set below the current page, step back.
 	useEffect(() => {
 		if (page > totalPages) setPage(totalPages);
 	}, [page, totalPages]);
 
-	const patchJob = useCallback(
-		(id, data) => {
-			const original = jobsRef.current.find((j) => j.id === id);
-			setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...data } : j)));
-			callApi("/jobs", {
-				method: "PATCH",
-				json: { id, ...data },
-				error: "Failed to update job",
-				onSuccess: () => fetchStats(),
-				onError: () => {
-					if (original) setJobs((prev) => prev.map((j) => (j.id === id ? original : j)));
-				},
-			});
-		},
-		[callApi, fetchStats],
+	const setJobs = useCallback(
+		(update) => setList((prev) => ({ ...prev, items: update(prev.items) })),
+		[setList],
 	);
 
-	const screenJobs = useCallback(
-		(ids, { variant = "success", prefix = () => "", error = "Failed to screen jobs" } = {}) => {
-			if (!ids.length) return;
-			setScreeningIds(new Set(ids));
-			return callApi("/jobs/screen", {
-				method: "POST",
-				json: { ids },
-				alias: "screenJobs",
-				error,
-				onSuccess: (data) => {
-					enqueueSnackbar(
-						`${prefix(data)}${data.good_fit ?? 0} good, ${data.maybe ?? 0} maybe, ${data.irrelevant ?? 0} no`,
-						{ variant },
-					);
-					refresh();
-				},
-			}).finally(() => setScreeningIds(new Set()));
+	const patchJob = useCallback(
+		async (id, data) => {
+			const original = jobsRef.current.find((j) => j.id === id);
+			setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, ...data } : j)));
+			const updated = await api.patch({ id, ...data });
+			if (updated) refetchStats();
+			else if (original) setJobs((prev) => prev.map((j) => (j.id === id ? original : j)));
 		},
-		[callApi, enqueueSnackbar, refresh],
+		[api, refetchStats, setJobs],
+	);
+
+	// `ids` undefined screens every unscreened job, across every page.
+	const screenJobs = useCallback(
+		async (ids, { variant = "success", prefix = () => "", spinning = [] } = {}) => {
+			setScreeningIds(new Set(spinning));
+			try {
+				const data = await api.screen(ids);
+				if (!data) return;
+				enqueueSnackbar(
+					`${prefix(data)}${data.good_fit ?? 0} good, ${data.maybe ?? 0} maybe, ${data.irrelevant ?? 0} no`,
+					{ variant },
+				);
+				refresh();
+			} finally {
+				setScreeningIds(new Set());
+			}
+		},
+		[api, enqueueSnackbar, refresh],
 	);
 
 	const colDefs = useMemo(() => {
@@ -344,7 +314,7 @@ export default function Jobs() {
 						<div className="flex items-center gap-1.5 text-label text-ink-2 font-medium leading-tight">
 							<SourceIcon source={data.source} className="w-3 h-3 shrink-0" />
 							<span className="truncate">{data.company}</span>
-							{data.location && <span className="text-ink-3">· {data.location.split(",")[0]}</span>}
+							{data.location && <span className="text-ink-3">· {shortLocation(data.location)}</span>}
 						</div>
 						{data.url ? (
 							<a
@@ -466,27 +436,16 @@ export default function Jobs() {
 		setPage(1);
 	}, []);
 
-	const handleFetch = (range) => {
-		callApi("/jobs/fetch", {
-			method: "POST",
-			json: { datePosted: range },
-			alias: "fetchJobs",
-			error: "Failed to fetch jobs",
-			onSuccess: (fetchData) => {
-				const msg = fetchData.inserted > 0 ? `${fetchData.inserted} new jobs` : "No new jobs";
-				enqueueSnackbar(msg, { variant: fetchData.inserted > 0 ? "success" : "default" });
-
-				if (fetchData.inserted > 0) {
-					return callApi("/jobs/screen", {
-						method: "POST",
-						json: {},
-						alias: "fetchJobs",
-						suppressError: true,
-						onSuccess: refresh,
-					});
-				}
-			},
-		});
+	const handleFetch = async (range) => {
+		const fetchData = await api.fetchNew(range);
+		if (!fetchData) return;
+		const msg = fetchData.inserted > 0 ? `${fetchData.inserted} new jobs` : "No new jobs";
+		enqueueSnackbar(msg, { variant: fetchData.inserted > 0 ? "success" : "default" });
+		if (fetchData.inserted > 0) {
+			// Screen what just landed.
+			await api.screen(undefined, { alias: "fetchJobs", suppressError: true });
+			refresh();
+		}
 	};
 
 	const handleScreen = () => {
@@ -494,26 +453,17 @@ export default function Jobs() {
 			const ids = jobs
 				.filter((j) => selectedIds.includes(j.id) && j.relevanceStatus === "unscreened")
 				.map((j) => j.id);
-			screenJobs(ids, { prefix: (d) => `${d.screened ?? 0} screened: ` });
+			if (!ids.length) return;
+			screenJobs(ids, { spinning: ids, prefix: (d) => `${d.screened ?? 0} screened: ` });
 			return;
 		}
 
-		// No selection → screen ALL unscreened jobs across every page (empty ids).
+		// No selection → screen ALL unscreened jobs across every page.
 		const visibleUnscreened = jobs.filter((j) => j.relevanceStatus === "unscreened").map((j) => j.id);
-		setScreeningIds(new Set(visibleUnscreened));
-		callApi("/jobs/screen", {
-			method: "POST",
-			json: {},
-			alias: "screenJobs",
-			error: "Failed to screen jobs",
-			onSuccess: (data) => {
-				enqueueSnackbar(
-					`${data.screened ?? 0} screened: ${data.good_fit ?? 0} good, ${data.maybe ?? 0} maybe, ${data.irrelevant ?? 0} no`,
-					{ variant: "success" },
-				);
-				refresh();
-			},
-		}).finally(() => setScreeningIds(new Set()));
+		screenJobs(undefined, {
+			spinning: visibleUnscreened,
+			prefix: (d) => `${d.screened ?? 0} screened: `,
+		});
 	};
 
 	const handleDelete = () => {
@@ -521,63 +471,36 @@ export default function Jobs() {
 		setConfirmDelete(true);
 	};
 
-	const confirmDeleteAction = () => {
+	const confirmDeleteAction = async () => {
 		setConfirmDelete(false);
-		callApi("/jobs/delete", {
-			method: "POST",
-			json: { ids: selectedIds },
-			success: `${selectedIds.length} job(s) deleted`,
-			error: "Failed to delete jobs",
-			onSuccess: () => {
-				setSelectedIds([]);
-				refresh();
-			},
-		});
+		const count = selectedIds.length;
+		const result = await api.remove(selectedIds);
+		if (!result) return;
+		enqueueSnackbar(`${result.deleted ?? count} job(s) deleted`, { variant: "success" });
+		setSelectedIds([]);
+		refresh();
 	};
 
-	const handleGenerate = (ids) => {
+	const handleGenerate = async (ids) => {
 		if (!ids.length) return;
 
-		callApi("/cv", {
-			error: "Failed to load CV",
-			onSuccess: (cv) => {
-				if (!cv?.latexSource) {
-					enqueueSnackbar("No CV found. Go to My CV first.", { variant: "warning" });
-					return;
-				}
+		const cv = await cvApi.get();
+		// structuredData is the source of truth; `latexSource` is a legacy column
+		// nothing writes any more, and checking it made this always bail out.
+		if (!cv?.structuredData) {
+			enqueueSnackbar("No CV found. Go to My CV first.", { variant: "warning" });
+			return;
+		}
 
-				setJobs((prev) => prev.map((j) => (ids.includes(j.id) ? { ...j, agentStatus: "generating" } : j)));
+		setJobs((prev) => prev.map((j) => (ids.includes(j.id) ? { ...j, agentStatus: "generating" } : j)));
 
-				callApi("/jobs/generate", {
-					method: "POST",
-					json: { jobIds: ids },
-					alias: "generateJobs",
-					error: "Failed to generate documents",
-					onSuccess: () => {
-						enqueueSnackbar(`${ids.length} document(s) generated`, { variant: "success" });
-						refresh();
-					},
-				});
-			},
-		});
+		const generated = await api.generate(ids);
+		if (!generated) return;
+		enqueueSnackbar(`${ids.length} document(s) generated`, { variant: "success" });
+		refresh();
 	};
 
-	useEffect(() => {
-		fetchStats();
-
-		callApi("/profile", {
-			error: "Failed to load profile",
-			onSuccess: (d) => {
-				setContact({
-					name: d.fullName ?? "",
-					location: d.currentLocation ?? "",
-					linkedinUrl: d.linkedinUrl ?? "",
-					githubUrl: d.githubUrl ?? "",
-				});
-			},
-		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	const [contact] = useResource(() => profileApi.contact(), [], null);
 
 	const toGenerate = jobs.filter((j) => selectedIds.includes(j.id) && !j.hasGeneratedCv).map((j) => j.id);
 	const toRegen = jobs.filter((j) => selectedIds.includes(j.id) && j.hasGeneratedCv).map((j) => j.id);

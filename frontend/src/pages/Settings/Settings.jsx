@@ -7,7 +7,7 @@ import { Input } from "components/ui/input";
 import { PageHeader } from "components/ui/page-header";
 import { RadioPills } from "components/ui/radio-pills";
 import { Select } from "components/ui/select";
-import { useCallApi, useTheme } from "services";
+import { useProfileApi, useResource, useTheme } from "services";
 
 const THEME_OPTIONS = [
 	{ value: "system", label: "System" },
@@ -74,9 +74,8 @@ export default function Settings() {
 	});
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
-	const [firstLoad, setFirstLoad] = useState(true);
 
-	const [callApi] = useCallApi();
+	const [api] = useProfileApi();
 	const { pref, setPref } = useTheme();
 
 	const load = (d) => {
@@ -93,27 +92,19 @@ export default function Settings() {
 		});
 	};
 
+	const [stored, { firstLoad }] = useResource(() => api.appSettings(), [], null);
 	useEffect(() => {
-		callApi("/settings", {
-			onSuccess: (d) => {
-				load(d);
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
-		});
-	}, []);
+		if (stored) load(stored);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [stored]);
 
 	const save = async () => {
 		setSaving(true);
-		const json = { screeningModel, generationModel };
-		if (anthropicKey != null) json.anthropicKey = anthropicKey;
-		if (apifyToken != null) json.apifyToken = apifyToken;
-		await callApi("/settings", {
-			method: "put",
-			json,
-			success: "Settings saved",
-			onSuccess: load,
-		});
+		const settings = { screeningModel, generationModel };
+		if (anthropicKey != null) settings.anthropicKey = anthropicKey;
+		if (apifyToken != null) settings.apifyToken = apifyToken;
+		const updated = await api.saveAppSettings(settings);
+		if (updated) load(updated);
 		setSaved(true);
 		setTimeout(() => setSaved(false), 2000);
 		setSaving(false);

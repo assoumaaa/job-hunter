@@ -1,6 +1,6 @@
 import { Link as LinkIcon, Loader2, Plus, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { useCallApi } from "services";
+import { useJobsApi } from "services";
 
 import { Button } from "components/ui/button";
 import { Input, Textarea } from "components/ui/input";
@@ -40,7 +40,7 @@ export default function AddJobDialog({ onClose, onAdded }) {
 	const [extractError, setExtractError] = useState(null);
 	const [extracted, setExtracted] = useState(false);
 
-	const [callApi] = useCallApi();
+	const [api] = useJobsApi();
 
 	const canSubmit = form.title.trim() && form.company.trim() && form.description.trim();
 	const canExtract = extractUrl.trim().length > 5 && !extracting;
@@ -50,11 +50,15 @@ export default function AddJobDialog({ onClose, onAdded }) {
 		setExtracting(true);
 		setExtractError(null);
 		setExtracted(false);
-		callApi("/jobs/extract-url", {
-			method: "POST",
-			json: { url: extractUrl.trim() },
-			suppressError: true,
-			onSuccess: (data) => {
+		api
+			.extractUrl(extractUrl.trim(), {
+				suppressError: true,
+				onError: (err) => {
+					setExtractError(err?.data?.detail || "Could not extract this URL. Try filling the form manually.");
+				},
+			})
+			.then((data) => {
+				if (!data) return;
 				setForm((f) => ({
 					...f,
 					title: data.title || f.title,
@@ -65,36 +69,35 @@ export default function AddJobDialog({ onClose, onAdded }) {
 					source: data.source || f.source,
 				}));
 				setExtracted(true);
-			},
-			onError: (err) => {
-				setExtractError(err?.data?.detail || "Could not extract this URL. Try filling the form manually.");
-			},
-		}).finally(() => setExtracting(false));
+			})
+			.finally(() => setExtracting(false));
 	};
 
 	const handleSubmit = () => {
 		if (!canSubmit || submitting) return;
 		setSubmitting(true);
 		setError(null);
-		callApi("/jobs/manual", {
-			method: "POST",
-			json: {
-				title: form.title.trim(),
-				company: form.company.trim(),
-				url: form.url.trim() || undefined,
-				location: form.location.trim() || undefined,
-				source: form.source,
-				description: form.description.trim(),
-			},
-			suppressError: true,
-			onSuccess: (job) => {
+		api
+			.addManual(
+				{
+					title: form.title.trim(),
+					company: form.company.trim(),
+					url: form.url.trim() || undefined,
+					location: form.location.trim() || undefined,
+					source: form.source,
+					description: form.description.trim(),
+				},
+				{
+					suppressError: true,
+					onError: (err) => setError(err?.data?.detail || "Failed to add job"),
+				},
+			)
+			.then((job) => {
+				if (!job) return;
 				onAdded(job);
 				onClose();
-			},
-			onError: (err) => {
-				setError(err?.data?.detail || "Failed to add job");
-			},
-		}).finally(() => setSubmitting(false));
+			})
+			.finally(() => setSubmitting(false));
 	};
 
 	const set = (field) => (e) => setForm((f) => ({ ...f, [field]: e.target.value }));

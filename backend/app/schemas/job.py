@@ -91,6 +91,8 @@ class JobStats(BaseModel):
     appliedThisWeek: int
     avgAts: int | None = None
 
+    model_config = {"from_attributes": True}
+
 
 class TweakRequest(BaseModel):
     target: str  # "cv" | "cl"
@@ -109,6 +111,8 @@ class TweakResponse(BaseModel):
     generatedCl: str | None = None
     hasOriginal: bool = True
     history: list[ChatTurn] | None = None  # full transcript for the target
+
+    model_config = {"from_attributes": True}
 
 
 class JobUpdateRequest(BaseModel):
@@ -143,6 +147,8 @@ class ScreenResult(BaseModel):
     irrelevant: int
     details: list[dict[str, Any]] | None = None
 
+    model_config = {"from_attributes": True}
+
 
 class ManualJobRequest(BaseModel):
     title: str
@@ -165,6 +171,8 @@ class ExtractedJobResponse(BaseModel):
     url: str | None = None
     source: str | None = None
 
+    model_config = {"from_attributes": True}
+
 
 class SyncRequest(BaseModel):
     datePosted: str = "week"
@@ -173,3 +181,5 @@ class SyncRequest(BaseModel):
 class SyncResult(BaseModel):
     inserted: int
     skipped: int
+
+    model_config = {"from_attributes": True}

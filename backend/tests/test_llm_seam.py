@@ -6,6 +6,7 @@ that the seam lets us run the pipeline offline without editing any call site.
 """
 
 import anthropic
+import pytest
 
 from app.services import ats_scorer, claude, job_extractor, llm
 
@@ -60,16 +61,62 @@ def test_chat_edit_cv_uses_forced_tool(fake_llm):
         [{"message": "Tightened the summary.",
           "updated_cv": {"summary": "Shorter.", "experience": []}}]
     )
-    result = claude.chat_edit_cv(
-        history=[],
-        current_cv={"summary": "Long.", "experience": []},
-        base_cv={"summary": "Long.", "experience": []},
-        user_prompt="make it shorter",
+    result = claude.chat_edit(
+        "cv",
+        [],
+        {"summary": "Long.", "experience": []},
+        {"summary": "Long.", "experience": []},
+        "make it shorter",
         job_title="Backend Engineer",
         company="Acme",
     )
-    assert result["message"] == "Tightened the summary."
-    assert result["updated_cv"] == {"summary": "Shorter.", "experience": []}
+    assert result.message == "Tightened the summary."
+    assert result.document == {"summary": "Shorter.", "experience": []}
+
+
+def test_chat_edit_cl_reads_its_own_tool_field(fake_llm):
+    """Same turn, different target: the cover letter comes back off `updated_cl`."""
+    fake_llm([{"message": "Warmed the opening.", "updated_cl": "Dear Acme,\n..."}])
+    result = claude.chat_edit(
+        "cl",
+        [],
+        "Dear Sir or Madam,",
+        {"summary": "Long.", "experience": []},
+        "make it warmer",
+        job_title="Backend Engineer",
+        company="Acme",
+    )
+    assert result.message == "Warmed the opening."
+    assert result.document == "Dear Acme,\n..."
+
+
+def test_chat_edit_without_a_document_is_a_question(fake_llm):
+    """No `updated_*` field means the assistant asked instead of editing."""
+    fake_llm([{"message": "Did you have direct reports?"}])
+    result = claude.chat_edit(
+        "cv",
+        [],
+        {"summary": "Long."},
+        {"summary": "Long."},
+        "say I managed the team",
+        job_title="Backend Engineer",
+        company="Acme",
+    )
+    assert result.document is None
+    assert result.message == "Did you have direct reports?"
+
+
+def test_chat_edit_rejects_an_unknown_target():
+    with pytest.raises(ValueError):
+        claude.chat_edit(
+            "cover-letter",  # not a target
+            [],
+            {},
+            {},
+            "anything",
+            job_title="Backend Engineer",
+            company="Acme",
+        )
 
 
 def test_transient_error_is_retried():

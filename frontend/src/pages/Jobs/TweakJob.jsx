@@ -1,11 +1,12 @@
 import { ArrowLeft, RotateCcw, Send, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { Button } from "components/ui/button";
 import { PageHeader } from "components/ui/page-header";
 import { Textarea } from "components/ui/input";
-import { useCallApi } from "services";
+import { parseCvJson, parseHistory } from "models/job";
+import { useJobsApi, usePdfPreview } from "services";
 import { useSnackbar } from "notistack";
 
 const SUGGESTIONS = {
@@ -22,32 +23,11 @@ const TAB_DEFS = [
 	{ key: "cl", label: "Cover Letter" },
 ];
 
-function parseCv(value) {
-	if (!value) return null;
-	if (typeof value === "object") return value;
-	try {
-		return JSON.parse(value);
-	} catch {
-		return null;
-	}
-}
-
-function parseHistory(value) {
-	if (!value) return [];
-	if (Array.isArray(value)) return value;
-	try {
-		const parsed = JSON.parse(value);
-		return Array.isArray(parsed) ? parsed : [];
-	} catch {
-		return [];
-	}
-}
-
 export default function TweakJob() {
 	const { jobId } = useParams();
 	const navigate = useNavigate();
 	const { enqueueSnackbar } = useSnackbar();
-	const [callApi] = useCallApi();
+	const [api] = useJobsApi();
 
 	const [job, setJob] = useState(null);
 	const [contact, setContact] = useState(null);
@@ -59,80 +39,44 @@ export default function TweakJob() {
 	const [messagesCl, setMessagesCl] = useState([]);
 	const [prompt, setPrompt] = useState("");
 	const [tweaking, setTweaking] = useState(false);
-	const [previewUrl, setPreviewUrl] = useState(null);
-	const [previewLoading, setPreviewLoading] = useState(false);
-	const prevBlobRef = useRef(null);
+	const [previewUrl, { loading: previewLoading, render: renderPreview }] = usePdfPreview();
 	const transcriptRef = useRef(null);
 
 	const messages = activeTab === "cv" ? messagesCv : messagesCl;
 
+	// Whatever the server says the documents are now.
+	const applyDocuments = (resp) => {
+		if (resp.generatedCv) setCv(parseCvJson(resp.generatedCv));
+		if (resp.generatedCl != null) setCl(resp.generatedCl || "");
+		if (resp.hasOriginal != null) setHasOriginal(resp.hasOriginal);
+	};
+
 	// Load job + profile contact on mount
 	useEffect(() => {
-		callApi(`/jobs/${jobId}`, {
-			suppressError: true,
-			onSuccess: (found) => {
-				setJob(found);
-				setCv(parseCv(found.generatedCv));
-				setCl(found.generatedCl || "");
-				setHasOriginal(Boolean(found.originalCv || found.originalCl));
-				setMessagesCv(parseHistory(found.chatCv));
-				setMessagesCl(parseHistory(found.chatCl));
-			},
-			onError: () => {
+		api.get(jobId, { suppressError: true }).then((found) => {
+			if (!found) {
 				enqueueSnackbar("Job not found", { variant: "error" });
 				navigate("/jobs");
-			},
+				return;
+			}
+			setJob(found);
+			setCv(parseCvJson(found.generatedCv));
+			setCl(found.generatedCl || "");
+			setHasOriginal(Boolean(found.originalCv || found.originalCl));
+			setMessagesCv(parseHistory(found.chatCv));
+			setMessagesCl(parseHistory(found.chatCl));
 		});
-		callApi("/profile", {
-			onSuccess: (d) =>
-				setContact({
-					name: d.fullName ?? "",
-					location: d.currentLocation ?? "",
-					linkedinUrl: d.linkedinUrl ?? "",
-					githubUrl: d.githubUrl ?? "",
-				}),
-			suppressError: true,
-		});
+		api.contact().then(setContact);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [jobId]);
 
-	// Re-render PDF preview whenever the active content changes
-	const renderPreview = useCallback(() => {
-		if (activeTab === "cv" && cv) {
-			setPreviewLoading(true);
-			callApi("/cv/compile?trim=false", {
-				method: "POST",
-				json: { structuredData: cv },
-				responseType: "blob",
-				error: "CV preview render failed",
-				onSuccess: (blob) => {
-					const url = URL.createObjectURL(blob);
-					if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
-					prevBlobRef.current = url;
-					setPreviewUrl(url);
-				},
-			}).finally(() => setPreviewLoading(false));
-		} else if (activeTab === "cl" && cl) {
-			setPreviewLoading(true);
-			callApi("/cv/compile-cl", {
-				method: "POST",
-				json: { text: cl, contact },
-				responseType: "blob",
-				error: "Cover letter preview render failed",
-				onSuccess: (blob) => {
-					const url = URL.createObjectURL(blob);
-					if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
-					prevBlobRef.current = url;
-					setPreviewUrl(url);
-				},
-			}).finally(() => setPreviewLoading(false));
-		} else {
-			setPreviewUrl(null);
-		}
-	}, [activeTab, cv, cl, contact, callApi]);
-
+	// Re-render the PDF preview whenever the active content changes.
 	useEffect(() => {
-		renderPreview();
-	}, [renderPreview]);
+		if (activeTab === "cv" && cv) renderPreview(() => api.compileCv(cv));
+		else if (activeTab === "cl" && cl) renderPreview(() => api.compileCl(cl, contact));
+		else renderPreview(null);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activeTab, cv, cl, contact]);
 
 	// Keep the transcript pinned to the latest message
 	useEffect(() => {
@@ -140,15 +84,7 @@ export default function TweakJob() {
 		if (el) el.scrollTop = el.scrollHeight;
 	}, [messages, tweaking, activeTab]);
 
-	// Cleanup blob on unmount
-	useEffect(
-		() => () => {
-			if (prevBlobRef.current) URL.revokeObjectURL(prevBlobRef.current);
-		},
-		[],
-	);
-
-	const handleTweak = () => {
+	const handleTweak = async () => {
 		const trimmed = prompt.trim();
 		if (!trimmed || tweaking) return;
 		const isCv = activeTab === "cv";
@@ -158,43 +94,34 @@ export default function TweakJob() {
 		applyMessages([...prev, { role: "user", content: trimmed }]);
 		setPrompt("");
 		setTweaking(true);
-		callApi(`/jobs/${jobId}/tweak`, {
-			method: "POST",
-			json: { target: activeTab, prompt: trimmed },
-			error: "Tweak failed",
-			onSuccess: (resp) => {
-				// Server transcript is authoritative (includes the assistant reply)
-				if (resp.history) applyMessages(parseHistory(resp.history));
-				else if (resp.message)
-					applyMessages([
-						...prev,
-						{ role: "user", content: trimmed },
-						{ role: "assistant", content: resp.message },
-					]);
-				if (resp.generatedCv) setCv(parseCv(resp.generatedCv));
-				if (resp.generatedCl != null) setCl(resp.generatedCl || "");
-				setHasOriginal(resp.hasOriginal);
-			},
-			onError: () => {
+		try {
+			const resp = await api.tweak(jobId, activeTab, trimmed);
+			if (!resp) {
 				// Roll back the optimistic turn on failure
 				applyMessages(prev);
 				setPrompt(trimmed);
-			},
-		}).finally(() => setTweaking(false));
+				return;
+			}
+			// Server transcript is authoritative (includes the assistant reply)
+			if (resp.history) applyMessages(parseHistory(resp.history));
+			else if (resp.message)
+				applyMessages([
+					...prev,
+					{ role: "user", content: trimmed },
+					{ role: "assistant", content: resp.message },
+				]);
+			applyDocuments(resp);
+		} finally {
+			setTweaking(false);
+		}
 	};
 
-	const handleReset = () => {
+	const handleReset = async () => {
 		if (!hasOriginal) return;
-		callApi(`/jobs/${jobId}/reset-tweaks`, {
-			method: "POST",
-			json: {},
-			error: "Reset failed",
-			onSuccess: (resp) => {
-				if (resp.generatedCv) setCv(parseCv(resp.generatedCv));
-				if (resp.generatedCl != null) setCl(resp.generatedCl || "");
-				enqueueSnackbar("Reset to original", { variant: "success" });
-			},
-		});
+		const resp = await api.resetTweaks(jobId);
+		if (!resp) return;
+		applyDocuments(resp);
+		enqueueSnackbar("Reset to original", { variant: "success" });
 	};
 
 	const handleDownload = () => {
@@ -304,7 +231,12 @@ export default function TweakJob() {
 			</div>
 
 			{/* Preview (left) + chat (right) */}
-			<div id="tweak-tabpanel" role="tabpanel" aria-labelledby={`tweak-tab-${activeTab}`} className="flex-1 flex overflow-hidden">
+			<div
+				id="tweak-tabpanel"
+				role="tabpanel"
+				aria-labelledby={`tweak-tab-${activeTab}`}
+				className="flex-1 flex overflow-hidden"
+			>
 				<div className="flex-1 min-h-0 bg-canvas relative">
 					{previewUrl && (
 						<iframe

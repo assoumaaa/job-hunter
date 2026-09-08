@@ -19,44 +19,35 @@ import CvEditor from "./CvEditor";
 import { FormSkeleton } from "components/ui/skeleton";
 import { Modal } from "components/ui/modal";
 import { PageHeader } from "components/ui/page-header";
-import { useAuth } from "@clerk/clerk-react";
-import { useCallApi } from "services";
+import { parseCvJson } from "models/job";
+import { useCvApi, usePdfPreview, useResource } from "services";
 import { useSnackbar } from "notistack";
 
 export default function CV() {
 	const [cv, setCv] = useState(EMPTY_CV);
-	const [pdfUrl, setPdfUrl] = useState(null);
 	const [pdfOpen, setPdfOpen] = useState(false);
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
-	const [compiling, setCompiling] = useState(false);
 	const [uploading, setUploading] = useState(false);
 	const [hasData, setHasData] = useState(false);
-	const [firstLoad, setFirstLoad] = useState(true);
 	const [activeSection, setActiveSection] = useState("contact");
 
-	const [callApi] = useCallApi();
-	const { getToken } = useAuth();
+	const [api] = useCvApi();
+	const [pdfUrl, { loading: compiling, render: renderPdf }] = usePdfPreview();
 	const { enqueueSnackbar } = useSnackbar();
 
+	const [stored, { firstLoad }] = useResource(() => api.get(), []);
 	useEffect(() => {
-		callApi("/cv", {
-			onSuccess: (d) => {
-				if (d.structuredData) {
-					const parsed =
-						typeof d.structuredData === "string" ? JSON.parse(d.structuredData) : d.structuredData;
-					setCv(normalizeCv(parsed));
-					setHasData(true);
-				}
-				setFirstLoad(false);
-			},
-			onError: () => setFirstLoad(false),
-		});
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+		const parsed = parseCvJson(stored?.structuredData);
+		if (parsed) {
+			setCv(normalizeCv(parsed));
+			setHasData(true);
+		}
+	}, [stored]);
 
 	const save = async () => {
 		setSaving(true);
-		await callApi("/cv", { method: "post", json: { structuredData: serializeForSave(cv) }, success: "CV saved" });
+		await api.save(serializeForSave(cv));
 		setSaved(true);
 		setHasData(true);
 		setTimeout(() => setSaved(false), 2000);
@@ -66,56 +57,19 @@ export default function CV() {
 	const handleUpload = async (file) => {
 		setUploading(true);
 		try {
-			const token = await getToken();
-			const form = new FormData();
-			form.append("file", file);
-			const resp = await fetch("/api/cv/upload", {
-				method: "POST",
-				headers: token ? { Authorization: `Bearer ${token}` } : {},
-				body: form,
-			});
-			if (resp.ok) {
-				const data = await resp.json();
-				setCv(normalizeCv(data.structuredData));
-				setHasData(true);
-			} else {
-				const err = await resp.text();
-				enqueueSnackbar(`Upload failed: ${err}`, { variant: "error" });
-			}
-		} catch {
-			enqueueSnackbar("Upload failed, please try again", { variant: "error" });
+			const data = await api.upload(file);
+			setCv(normalizeCv(data.structuredData));
+			setHasData(true);
+		} catch (e) {
+			enqueueSnackbar(e?.message ?? "Upload failed, please try again", { variant: "error" });
 		} finally {
 			setUploading(false);
 		}
 	};
 
 	const compile = async () => {
-		setCompiling(true);
-		if (pdfUrl) URL.revokeObjectURL(pdfUrl);
-		try {
-			const token = await getToken();
-			const resp = await fetch("/api/cv/compile", {
-				method: "POST",
-				headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-				body: JSON.stringify({ structuredData: serializeForSave(cv) }),
-			});
-			if (resp.ok) {
-				const blob = await resp.blob();
-				setPdfUrl(URL.createObjectURL(blob));
-				setPdfOpen(true);
-			} else {
-				let detail = `${resp.status} ${resp.statusText}`;
-				try {
-					const body = await resp.json();
-					if (body?.detail) detail = body.detail;
-				} catch {
-					/* body wasn't JSON */
-				}
-				enqueueSnackbar(`PDF generation failed: ${detail}`, { variant: "error" });
-			}
-		} finally {
-			setCompiling(false);
-		}
+		await renderPdf(() => api.compile(serializeForSave(cv)));
+		setPdfOpen(true);
 	};
 
 	const sections = [

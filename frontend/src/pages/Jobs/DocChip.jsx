@@ -1,57 +1,24 @@
 import { FileText } from "lucide-react";
 import { useState } from "react";
-import { useCallApi } from "services";
+import { useJobsApi } from "services";
 
-// List rows don't carry doc content — fetch it by id on click, then compile.
+// List rows don't carry doc content — the resource module loads it by id and
+// compiles it in one step.
 export default function DocChip({ jobId, label, ready, contact }) {
 	const [loading, setLoading] = useState(false);
-	const [callApi] = useCallApi();
+	const [api] = useJobsApi();
 
 	const docName = label === "CV" ? "CV" : "cover letter";
 
-	const openPdf = () => {
+	const openPdf = async () => {
 		if (!ready || loading) return;
 		setLoading(true);
-
-		const isCv = label === "CV";
-
-		callApi(`/jobs/${jobId}`, {
-			error: "Failed to load document",
-			onSuccess: (job) => {
-				const value = isCv ? job.generatedCv : job.generatedCl;
-				if (!value) {
-					setLoading(false);
-					return;
-				}
-
-				let endpoint, json;
-				if (isCv) {
-					let structuredData;
-					try {
-						structuredData = typeof value === "string" ? JSON.parse(value) : value;
-					} catch {
-						setLoading(false);
-						return;
-					}
-					endpoint = "/cv/compile";
-					json = { structuredData };
-				} else {
-					endpoint = "/cv/compile-cl";
-					json = { text: value, contact };
-				}
-
-				callApi(endpoint, {
-					method: "POST",
-					json,
-					responseType: "blob",
-					error: "PDF compile failed",
-					onSuccess: (blob) => {
-						window.open(URL.createObjectURL(blob), "_blank");
-					},
-				}).finally(() => setLoading(false));
-			},
-			onError: () => setLoading(false),
-		});
+		try {
+			const blob = await api.compileDocument(jobId, label === "CV" ? "cv" : "cl", contact);
+			if (blob) window.open(URL.createObjectURL(blob), "_blank");
+		} finally {
+			setLoading(false);
+		}
 	};
 
 	if (!ready) {

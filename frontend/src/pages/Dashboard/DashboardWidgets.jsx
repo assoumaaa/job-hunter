@@ -3,6 +3,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Badge } from "components/ui/badge";
+import { agentTag, atsTone, shortLocation } from "models/job";
+
+export { agentTag };
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -15,22 +18,6 @@ const colorFor = (name = "") => COMPANY_COLORS[(name.charCodeAt(0) || 0) % COMPA
 
 function domainFromUrl(url) {
 	try { return new URL(url).hostname; } catch { return null; }
-}
-
-function atsTone(score) {
-	if (score == null) return null;
-	if (score >= 90) return "ok";
-	if (score >= 80) return "info";
-	if (score >= 70) return "warn";
-	return "bad";
-}
-
-export function agentTag(status) {
-	if (status === "generating") return { label: "Optimizing", tone: "accent" };
-	if (status === "reviewing")  return { label: "Reviewing",  tone: "warn" };
-	if (status === "done")       return { label: "Ready",      tone: "ok" };
-	if (status === "rejected")   return { label: "Rejected",   tone: "bad" };
-	return null;
 }
 
 // ── company logo ───────────────────────────────────────────────────────────
@@ -234,7 +221,7 @@ export function JobRow({ job }) {
 					{!isDubai && job.location && (
 						<>
 							<span className="text-ink-3">·</span>
-							<span>{job.location.split(",")[0]}</span>
+							<span>{shortLocation(job.location)}</span>
 						</>
 					)}
 				</div>
