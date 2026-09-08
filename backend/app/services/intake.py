@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -32,6 +33,8 @@ from . import (
 from .errors import IntakeError
 
 __all__ = ["IntakeError", "fetch", "screen", "generate_for_jobs", "load_base_cv"]
+
+logger = logging.getLogger(__name__)
 
 
 def _with_credentials(fn):
@@ -80,26 +83,48 @@ def load_base_cv(db: Session, user: User) -> dict | None:
     return json.loads(cv.structuredData)
 
 
-def _build_profile_context(profile: Profile | None) -> str:
-    """The candidate-profile block injected into the generation prompt."""
+def _language_line(languages: list) -> str:
+    return ", ".join(
+        f"{lg.get('name')} ({lg['level']})" if lg.get("level") else str(lg.get("name"))
+        for lg in languages
+        if isinstance(lg, dict) and lg.get("name")
+    )
+
+
+def _build_profile_context(
+    profile: Profile | None, languages: list | None = None, years: float | None = None
+) -> str:
+    """The candidate-profile block injected into the generation prompt.
+
+    `languages` is the list the finished CV will actually print (base CV first,
+    profile as fallback — see `generate_for_jobs`). Reading the profile's copy
+    here while rendering the CV's put "Native" in the summary and "Fluent" in
+    the Languages section of the same page. `years` is likewise the tenure
+    computed from the CV's date ranges, the profile's number being the fallback.
+    """
     if not profile:
         return ""
-    languages = _profile_list(profile, "languages")
+    if languages is None:
+        languages = _profile_list(profile, "languages")
+    if years is None:
+        years = profile.totalYearsExperience
+    years_str = f"{years:g}" if isinstance(years, (int, float)) else "unknown"
     keywords = _profile_list(profile, "keywords")
-    lang_str = (
-        ", ".join(f"{lg['name']} ({lg['level']})" for lg in languages)
-        if languages
-        else ""
-    )
+    lang_str = _language_line(languages)
     kw_str = ", ".join(keywords) if keywords else ""
     return (
         f"\nCANDIDATE PROFILE:\n"
-        f"- Years of experience: {profile.totalYearsExperience or 'unknown'}\n"
+        f"- Years of experience: {years_str}\n"
         f"- Seniority: {profile.seniority or 'unknown'}\n"
         f"- Current location: {profile.currentLocation or 'unknown'}\n"
         f"- Preferred locations: {profile.preferredLocations or 'any'}\n"
         f"- Notice period: {profile.noticePeriod or 'unknown'}"
-        + (f"\n- Languages: {lang_str}" if lang_str else "")
+        + (
+            f"\n- Languages: {lang_str} (printed in their own Languages section; "
+            f"never list them under Skills)"
+            if lang_str
+            else ""
+        )
         + (f"\n- Key skills/keywords to emphasize: {kw_str}" if kw_str else "")
     )
 
@@ -283,12 +308,24 @@ def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
         raise IntakeError("No CV found. Please upload your CV first.", 400)
 
     profile = db.query(Profile).filter(Profile.userId == user.id).first()
-    profile_context = _build_profile_context(profile)
+    # Identity has two homes (Profile columns and the CV header — see
+    # CONTEXT.md). The CV wins; the profile fills its gaps. Resolve that once
+    # here so the prompt describes the same languages the page will print.
+    profile_languages = _profile_list(profile, "languages")
+    identity_languages = base_cv_data.get("languages") or profile_languages
+    # Tenure the way a parser derives it — from the date ranges — with the
+    # profile's self-reported number only when no range can be read.
+    computed_years = resume.experience_years(base_cv_data)
+    candidate_years = (
+        computed_years
+        if computed_years is not None
+        else (profile.totalYearsExperience if profile else None)
+    )
+    profile_context = _build_profile_context(profile, identity_languages, candidate_years)
     candidate_name = (profile.fullName if profile else None) or user.name or "Candidate"
     linkedin_url = profile.linkedinUrl if profile else None
     github_url = profile.githubUrl if profile else None
     narrative = profile.narrative if profile else None
-    candidate_years = profile.totalYearsExperience if profile else None
 
     results: list[Job] = []
     for job_id in job_ids:
@@ -321,16 +358,34 @@ def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
         )
 
         # Assemble final CV: generated sections + factual identity from the base
-        # CV (header + languages are copied, never tailored).
-        assembled = resume.merge_identity(result.resume, base_cv_data)
+        # CV (header + languages are copied, never tailored), with the profile
+        # filling any link or language the base CV left blank.
+        # The condition-resolved CV is the base here: a bullet voted out for
+        # this job must not come back as a "forgotten" one.
+        assembled = resume.merge_identity(
+            result.resume,
+            effective_cv,
+            links={"linkedin": linkedin_url, "github": github_url},
+            languages=profile_languages,
+        )
 
         # Fit to one page NOW and store the fitted version. Views render the
         # stored JSON verbatim, so any content trim must happen here.
-        _, assembled = pdf_generator.fit_and_render(
+        pdf_bytes, assembled = pdf_generator.fit_and_render(
             assembled, trim_callback=claude.trim_resume_for_fit
         )
 
         score = result.ats
+        # Read the finished PDF back the way a parser would; anything it lost
+        # is reported next to the score rather than discovered by a recruiter.
+        parse_issues = pdf_generator.parse_back_issues(pdf_bytes, assembled)
+        if parse_issues:
+            logger.warning(
+                "job %s: %d fact(s) unreadable in the rendered PDF: %s",
+                job.id, len(parse_issues), parse_issues[:3],
+            )
+            if score:
+                score.gaps = [*score.gaps, *parse_issues[:3]]
         # The scorer already decided; read that decision instead of re-deriving
         # accept/reject from a threshold of the route's own.
         job.agentStatus = (

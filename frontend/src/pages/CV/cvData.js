@@ -59,6 +59,20 @@ export function bulletText(b) {
 	return typeof b === "string" ? b : b?.text ?? "";
 }
 
+// A role's alternate titles (other titles equally true of it — the backend
+// only ever retitles a role to one of these) are edited as one comma-separated
+// line, kept in a client-only field so a half-typed comma survives re-renders.
+export function altTitlesText(exp) {
+	return (exp.alternateTitles || []).join(", ");
+}
+
+export function parseAltTitles(text) {
+	return (text || "")
+		.split(",")
+		.map((t) => t.trim())
+		.filter(Boolean);
+}
+
 // Merge loaded data over EMPTY_CV and normalize every experience bullet.
 export function normalizeCv(raw) {
 	const base = { ...EMPTY_CV, ...(raw || {}) };
@@ -67,6 +81,7 @@ export function normalizeCv(raw) {
 		header: { ...EMPTY_CV.header, ...(base.header || {}) },
 		experience: (base.experience || []).map((exp) => ({
 			...exp,
+			_altTitlesText: altTitlesText(exp),
 			bullets: (exp.bullets || []).map(normalizeBullet),
 		})),
 	};
@@ -77,8 +92,9 @@ export function normalizeCv(raw) {
 export function serializeForSave(cv) {
 	return {
 		...cv,
-		experience: (cv.experience || []).map((exp) => ({
+		experience: (cv.experience || []).map(({ _altTitlesText, ...exp }) => ({
 			...exp,
+			alternateTitles: _altTitlesText != null ? parseAltTitles(_altTitlesText) : exp.alternateTitles || [],
 			bullets: (exp.bullets || []).map((b) => {
 				const nb = normalizeBullet(b);
 				return { text: nb.text, condition: hasCondition(nb) ? nb.condition : null };

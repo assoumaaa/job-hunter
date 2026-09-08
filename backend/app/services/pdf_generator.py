@@ -7,6 +7,7 @@ WeasyPrint is pure Python — no Chromium, no browser startup, SaaS-friendly.
 
 from __future__ import annotations
 
+import copy
 import html
 import logging
 import re
@@ -15,6 +16,7 @@ from pathlib import Path
 import weasyprint
 
 from . import resume as _resume
+from .errors import IntakeError
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,23 @@ def _render_doc(html_content: str, css_strings: list[str]):
 def _esc(text: str) -> str:
     """HTML-escape user content."""
     return html.escape(str(text or ""))
+
+
+def _link_html(url: str) -> str:
+    """An <a> for a profile URL (LinkedIn, GitHub, portfolio).
+
+    People type these without a scheme ("linkedin.com/in/x"); the href still
+    has to be absolute or the PDF link is dead. The visible text drops the
+    scheme, "www." and a trailing slash so the header stays short.
+    """
+    url = url.strip()
+    href = url if re.match(r"^https?://", url, re.IGNORECASE) else f"https://{url}"
+    return f'<a href="{_esc(href)}">{_esc(_link_display(url))}</a>'
+
+
+def _link_display(url: str) -> str:
+    """The visible form of a profile URL: no scheme, no www., no trailing slash."""
+    return re.sub(r"^https?://(www\.)?", "", url.strip(), flags=re.IGNORECASE).rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -194,13 +213,22 @@ def render_html(data: dict, lang: str = "en", page_format: str = "a4") -> str:
         subtitle_parts.append(_esc(header["location"]))
     header_subtitle = "<br>".join(subtitle_parts)
 
-    # Build header right (email + phone)
-    right_parts = []
+    # Build header right: contact on one line, profile links on the next. The
+    # schema has had linkedin/github/portfolio all along; until they were
+    # printed here, filling them in changed nothing on the page. Two lines,
+    # not four: every extra header line is a bullet the fitter shortens later.
+    contact_bits = []
     if header.get("email"):
-        right_parts.append(f'Email: <a href="mailto:{_esc(header["email"])}">{_esc(header["email"])}</a>')
+        contact_bits.append(f'Email: <a href="mailto:{_esc(header["email"])}">{_esc(header["email"])}</a>')
     if header.get("phone"):
-        right_parts.append(f"Mobile: {_esc(header['phone'])}")
-    header_right = "<br>".join(right_parts)
+        contact_bits.append(f"Mobile: {_esc(header['phone'])}")
+    link_bits = [
+        _link_html(header[key])
+        for key in ("linkedin", "github", "portfolio")
+        if (header.get(key) or "").strip()
+    ]
+    right_lines = [" | ".join(bits) for bits in (contact_bits, link_bits) if bits]
+    header_right = "<br>".join(right_lines)
 
     is_en = lang.startswith("en")
     labels = {
@@ -327,12 +355,73 @@ def _run_css_fit(
     return None, last_doc
 
 
+# ---------------------------------------------------------------------------
+# Content trim: what gives when the tightest CSS still overflows.
+#
+# The old trimmer asked Haiku to "cut ~30 words of filler across the résumé",
+# and saved the result. That is where "load-balanced error handling that
+# maintained consistent uptime across peak payment cycles" became "load-balanced
+# error handling and consistent uptime": a page fitter was rewriting the
+# candidate's history, one qualifier at a time, on a third of generated CVs.
+# This one never touches a bullet's wording. It takes from the parts that are
+# judgement (summary length, skills breadth) and, only when those are spent,
+# drops the least relevant bullet whole and says so.
+# ---------------------------------------------------------------------------
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_MIN_SUMMARY_SENTENCES = 2
+_MIN_SKILL_ITEMS = 4
+_MIN_BULLETS_PER_ROLE = 2
+
+
+def trim_content(data: dict, overflow_words: int = 0) -> dict:
+    """One deterministic step of content reduction. Never rewrites a bullet.
+
+    Order: the summary loses its last sentence while it has more than two;
+    then the longest skills row loses its last item while it has more than
+    four; then, as the last resort, the role with the most bullets loses its
+    last one (the generator orders bullets by relevance), never below two per
+    role, and the drop is recorded in `fitNotes` so the job can surface it.
+    `overflow_words` is accepted for the `fit_and_render` callback contract;
+    the step is fixed because every step is re-measured by a render.
+    """
+    out = copy.deepcopy(data)
+
+    sentences = [x for x in _SENTENCE_END.split(str(out.get("summary") or "").strip()) if x]
+    if len(sentences) > _MIN_SUMMARY_SENTENCES:
+        out["summary"] = " ".join(sentences[:-1])
+        return out
+
+    rows = [
+        r for r in (out.get("skills") or [])
+        if isinstance(r, dict) and len(r.get("items") or []) > _MIN_SKILL_ITEMS
+    ]
+    if rows:
+        longest = max(rows, key=lambda r: len(r["items"]))
+        longest["items"] = list(longest["items"][:-1])
+        return out
+
+    roles = [
+        r for r in (out.get("experience") or [])
+        if isinstance(r, dict) and len(r.get("bullets") or []) > _MIN_BULLETS_PER_ROLE
+    ]
+    if roles:
+        fullest = max(roles, key=lambda r: len(r["bullets"]))
+        dropped = fullest["bullets"][-1]
+        fullest["bullets"] = list(fullest["bullets"][:-1])
+        text = _bullet_text(dropped)
+        out.setdefault("fitNotes", []).append(
+            f"Dropped to fit one page: {fullest.get('company', '?')} bullet "
+            f"{len(fullest['bullets']) + 1} ({text!r})"
+        )
+    return out
+
+
 def fit_and_render(
     data: dict,
     lang: str = "en",
     page_format: str = "a4",
     trim_callback: callable | None = None,
-    max_trims: int = 2,
+    max_trims: int = 6,
 ) -> tuple[bytes, dict]:
     """Generate a one-page PDF from structured CV data.
 
@@ -343,8 +432,8 @@ def fit_and_render(
     Strategy:
       1. CSS auto-fit (8 tightening steps). Free, no model calls.
       2. If CSS exhausts itself and `trim_callback(data, overflow_words) -> data`
-         is provided, ask it to shorten bullet wording, then re-run CSS auto-fit.
-         Repeats up to `max_trims` times.
+         is provided (normally `trim_content`), take one step of content off and
+         re-run CSS auto-fit. Repeats up to `max_trims` times.
       3. If still multi-page, returns best-effort PDF.
     """
     page_size = "letter" if page_format == "letter" else "A4"
@@ -372,6 +461,11 @@ def fit_and_render(
 
         try:
             trimmed = trim_callback(current_data, overflow_words)
+        except IntakeError:
+            # A domain precondition ("add your API key") is not a trim that went
+            # wrong — it means the trim was never possible. Swallowing it here
+            # returned a silently untrimmed PDF and told the caller nothing.
+            raise
         except Exception as e:
             logger.warning("trim_callback failed: %s; aborting trim loop.", e)
             break
@@ -393,6 +487,63 @@ def fit_and_render(
     return last_doc.write_pdf(), current_data
 
 
+# ---------------------------------------------------------------------------
+# Parse-back: read the finished PDF the way an ATS parser does and report the
+# facts that did not survive. We own the renderer, so this is the one
+# parseability check that measures the real thing rather than guessing from
+# the JSON.
+# ---------------------------------------------------------------------------
+def _flat(text: str) -> str:
+    return re.sub(r"\s+", " ", _normalize_for_ats(str(text or ""))).strip().lower()
+
+
+def parse_back_issues(pdf_bytes: bytes, data: dict) -> list[str]:
+    """Facts from `data` that a text parser cannot find in `pdf_bytes`.
+
+    Checks the header (name, contact, links), every role's company, title and
+    period, every education entry, and every certification title — the fields
+    an ATS keys a profile on. Returns one line per missing fact, empty when the
+    PDF reads back clean. A PDF that cannot be opened is logged and yields no
+    issues: this is a diagnostic, and a renderer fault is reported elsewhere.
+    """
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+        text = "\n".join(page.get_text() for page in doc)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("parse-back: PDF could not be opened (%s)", e)
+        return []
+    haystack = _flat(text)
+
+    data = _resume.normalize(data)
+    expected: list[tuple[str, str]] = []
+    header = data.get("header") or {}
+    for key in ("name", "email", "phone", "location"):
+        if header.get(key):
+            expected.append((f"header.{key}", header[key]))
+    for key in ("linkedin", "github", "portfolio"):
+        if header.get(key):
+            expected.append((f"header.{key}", _link_display(header[key])))
+    for i, role in enumerate(data.get("experience") or []):
+        for key in ("company", "title", "period"):
+            if role.get(key):
+                expected.append((f"experience[{i}].{key}", role[key]))
+    for i, edu in enumerate(data.get("education") or []):
+        for key in ("institution", "degree", "year"):
+            if edu.get(key):
+                expected.append((f"education[{i}].{key}", edu[key]))
+    for i, cert in enumerate(data.get("certifications") or []):
+        if cert.get("title"):
+            expected.append((f"certifications[{i}].title", cert["title"]))
+
+    return [
+        f"{where} not found in PDF text: {value!r}"
+        for where, value in expected
+        if _flat(value) not in haystack
+    ]
+
+
 def generate_cover_letter_pdf(
     text: str,
     contact: dict | None = None,
@@ -411,9 +562,9 @@ def generate_cover_letter_pdf(
         subtitle_bits.append(_esc(contact["location"]))
     link_bits = []
     if contact.get("linkedinUrl"):
-        link_bits.append(f'<a href="{_esc(contact["linkedinUrl"])}">{_esc(contact["linkedinUrl"].replace("https://","").rstrip("/"))}</a>')
+        link_bits.append(_link_html(contact["linkedinUrl"]))
     if contact.get("githubUrl"):
-        link_bits.append(f'<a href="{_esc(contact["githubUrl"])}">{_esc(contact["githubUrl"].replace("https://","").rstrip("/"))}</a>')
+        link_bits.append(_link_html(contact["githubUrl"]))
     if link_bits:
         subtitle_bits.append(" | ".join(link_bits))
     if subtitle_bits:

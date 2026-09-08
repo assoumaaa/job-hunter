@@ -83,7 +83,7 @@ def test_full_generate_and_score_runs_offline(fake_llm):
 
     # The whole score is attached — a real AtsScore, not a lossy breakdown.
     assert isinstance(result.ats, ats_scorer.AtsScore)
-    assert result.ats.keyword == 45  # both must-haves + the nice-to-have present
+    assert result.ats.keyword == 30  # both must-haves + the nice-to-have present (30 = keyword ceiling)
     assert result.ats.decision == "APPROVED"
     assert result.ats_score == result.ats.total
 

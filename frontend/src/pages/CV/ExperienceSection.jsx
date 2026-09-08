@@ -2,7 +2,7 @@ import { Briefcase, Plus } from "lucide-react";
 
 import BulletRow from "./BulletRow";
 import { Field, ListItem, Section } from "./FormWidgets";
-import { newBullet } from "./cvData";
+import { altTitlesText, newBullet } from "./cvData";
 import { Button } from "components/ui/button";
 
 function BulletList({ bullets, onChange }) {
@@ -47,7 +47,10 @@ export default function ExperienceSection({ experience, onChange }) {
 	const updateJob = (i, patch) => onChange(experience.map((e, j) => (j === i ? { ...e, ...patch } : e)));
 	const removeJob = (i) => onChange(experience.filter((_, j) => j !== i));
 	const addJob = () =>
-		onChange([...experience, { company: "", title: "", period: "", location: "", bullets: [newBullet()] }]);
+		onChange([
+			...experience,
+			{ company: "", title: "", period: "", location: "", _altTitlesText: "", bullets: [newBullet()] },
+		]);
 
 	return (
 		<Section bare id="experience" icon={Briefcase} title="Work experience">
@@ -63,6 +66,12 @@ export default function ExperienceSection({ experience, onChange }) {
 						<Field label="Period" value={exp.period} onChange={(v) => updateJob(i, { period: v })} placeholder="Jan 2022 - Present" />
 						<Field label="Location" value={exp.location} onChange={(v) => updateJob(i, { location: v })} placeholder="Remote" />
 					</div>
+					<Field
+						label="Alternate titles (equally true of this role; a tailored CV may use one instead)"
+						value={exp._altTitlesText ?? altTitlesText(exp)}
+						onChange={(v) => updateJob(i, { _altTitlesText: v })}
+						placeholder="Technical Solutions Consultant, Implementation Engineer"
+					/>
 					<BulletList bullets={exp.bullets || []} onChange={(b) => updateJob(i, { bullets: b })} />
 				</ListItem>
 			))}

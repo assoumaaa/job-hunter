@@ -3,13 +3,22 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from . import ats_scorer, llm
-from .llm import extract_json as _extract_json
-from .llm import strip_fences as _strip_fences
 
 logger = logging.getLogger(__name__)
+
+
+def _cached(text: str) -> dict:
+    """A system block Anthropic should cache for the next five minutes.
+
+    The prompt prefix every call in this module shares — the system prompt, the
+    job context, the base CV — is stable across a session's turns, so marking it
+    ephemeral turns repeated turns into cache reads.
+    """
+    return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
 
 # ---------------------------------------------------------------------------
 # Model selection: Haiku for cheap bulk screening, Sonnet for quality generation.
@@ -52,6 +61,19 @@ FORBIDDEN_PHRASES = [
     "I would love the opportunity",
 ]
 
+# Rendered once, so every prompt that bans this vocabulary bans the same
+# vocabulary. Before this, the chat prompts restated a hand-picked subset as
+# prose and drifted from the lists above whenever a word was added.
+FORBIDDEN_WORDS_LINE = ", ".join(FORBIDDEN_WORDS)
+FORBIDDEN_PHRASES_LINE = " | ".join(FORBIDDEN_PHRASES)
+FORBIDDEN_STYLE_RULE = (
+    "Never use these words: "
+    + FORBIDDEN_WORDS_LINE
+    + ". Never use these phrases: "
+    + FORBIDDEN_PHRASES_LINE
+    + ". No em dashes, semicolons, or exclamation marks."
+)
+
 # ---------------------------------------------------------------------------
 # Archetype definitions (used by both screening and generation)
 # ---------------------------------------------------------------------------
@@ -86,7 +108,10 @@ ARCHETYPE_GENERATION_HINTS = {
 # ---------------------------------------------------------------------------
 # Generation system prompt
 # ---------------------------------------------------------------------------
-AGENT_SYSTEM_PROMPT = f"""You are a professional CV writer and ATS optimization expert.
+# A plain string, not an f-string: the JSON example below is literal, so it no
+# longer has to double every brace to survive interpolation. The two real
+# substitutions are tokens, filled in once at import.
+_AGENT_SYSTEM_TEMPLATE = """You are a professional CV writer and ATS optimization expert.
 
 ## STEP 1: EXTRACT KEYWORDS
 Extract 15-20 keywords/phrases from the JD. These are the exact terms the ATS will scan for.
@@ -115,7 +140,7 @@ base CV's fuller wording over a shorter paraphrase.
 - Summary: 2-3 lines (~200 characters)
 - Bullets can wrap to 2 lines — that's fine. But avoid wrapping where just 1-2 words spill to line 2. Either make it fit 1 line or fill out 2 full lines with more useful detail.
 - If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
-- Skills: 3-4 categories (do NOT put Languages in skills — languages are handled separately). Each category should fill its line.
+- Skills: 3-4 categories. Each category should fill its line. Spoken languages (Arabic, English, ...) NEVER appear in Skills, at any level — they are printed from the base CV in their own Languages section, and a second copy with a different level contradicts it.
 - Education, certifications, contact header and languages are NOT yours to write. They are copied verbatim from the base CV and appended after your output, so budget roughly 5-7 lines of page space for them.
 
 ### Structure rules
@@ -130,16 +155,15 @@ Classify the target role into exactly one type:
 - SOLUTIONS: the role is solutions/consulting/pre-sales/implementation/client-facing
 This single decision drives BOTH the dynamic title rule and the summary descriptor below. They must never disagree.
 
-### Dynamic title rule (Odoo ONLY)
-ENGINEERING -> the Odoo job title becomes "Software Engineer"
-SOLUTIONS -> the Odoo job title becomes "Technical Solutions Consultant"
-All other job titles NEVER change.
+### Title rule
+A role's title is either its base title or one of the titles listed in that role's `alternateTitles` (titles the candidate declared equally true of the role). Pick the one that matches the role-type decision: an engineering title for ENGINEERING, a consulting/solutions title for SOLUTIONS. A role with no `alternateTitles` keeps its title exactly. Never write any other title.
 
 ### Keyword injection strategy (ethical, truth-based)
 Distribute the extracted keywords deliberately:
 - Summary: inject top 5 keywords naturally
 - First bullet of each role: inject 1-2 keywords
 - Skills section: mirror JD terminology ONLY for skills the base CV already claims. NEVER add a tool, framework, cloud provider, or practice the base CV does not list — not even if the JD stresses it. Rephrasing a real skill in the JD's words is fine; adding an unclaimed one is a fabrication and disqualifies the candidate.
+- Mirror the JD's vocabulary, not its grammar. Keep every phrase grammatical ("API integration", not "APIs integration"); the ATS matcher tolerates plural differences, so copying a typo gains nothing and reads as carelessness.
 - Reformulate existing experience with JD vocabulary. Examples:
   - JD says "CI/CD pipelines", CV says "automated deployment" -> "CI/CD pipeline automation"
   - JD says "stakeholder management", CV says "collaborated with teams" -> "stakeholder management across engineering, product, and operations"
@@ -159,11 +183,13 @@ Identify the employer's industry/domain from the JD (cybersecurity, fintech, hea
 - The summary MUST open with a role descriptor that is EXACTLY the title of the FIRST (most recent) experience entry in your output. First job says "Software Engineer" -> summary starts "Software Engineer with...". First job says "Technical Solutions Consultant" -> summary starts "Technical Solutions Consultant with...". The summary descriptor and the first job title must NEVER disagree.
 - NEVER copy the target job title as if it is the candidate's current role (e.g. don't say "Forward Deployed Engineer with 4 years...") — the descriptor comes from the first job title, nothing else.
 - Both descriptors are truthful for this candidate; the role-type decision above picks which one fits the target role.
+- The summary positions; the bullets prove. NEVER restate a bullet's metric or claim in the summary — if a bullet says "500+ modules for 100+ clients", the summary must not repeat it. Spend the summary on what no bullet can say: the through-line of the career, domain breadth, languages and region, the fit for this role.
 
 ### Writing quality
 - Every bullet starts with a single, correctly conjugated action verb (Led, Built, Shipped, Engineered) — never a noun phrase or headless verb like "Tech led"
 - Prefer specifics: "Cut p95 latency from 2.1s to 380ms" beats "improved performance"
 - Name tools, projects, metrics when possible
+- Cut filler that has no number behind it ("consistent uptime", "various clients"): give the figure or drop the phrase
 - Vary sentence structure: don't start every bullet the same way
 - Mix sentence lengths: short. Then longer with context. Short again.
 - No passive voice. Action verbs, direct language.
@@ -178,8 +204,8 @@ Identify the employer's industry/domain from the JD (cybersecurity, fintech, hea
 - No generic "I would love the opportunity" -- name the actual reason.
 
 ## FORBIDDEN
-Words: {', '.join(FORBIDDEN_WORDS)}
-Phrases: {' | '.join(FORBIDDEN_PHRASES)}
+Words: __FORBIDDEN_WORDS__
+Phrases: __FORBIDDEN_PHRASES__
 Style: No em dashes, semicolons, exclamation marks. No hedging. No corporate-speak.
 
 ## OUTPUT FORMAT (strict)
@@ -191,24 +217,28 @@ Style: No em dashes, semicolons, exclamation marks. No hedging. No corporate-spe
 [detected archetype name]
 
 ## RESUME
-{{
+{
   "summary": "...",
   "experience": [
-    {{"company": "...", "title": "...", "bullets": ["..."]}}
+    {"company": "...", "title": "...", "bullets": ["..."]}
   ],
   "projects": [
-    {{"name": "...", "badge": "...", "description": "...", "tech": "..."}}
+    {"name": "...", "badge": "...", "description": "...", "tech": "..."}
   ],
   "skills": [
-    {{"category": "...", "items": ["..."]}}
+    {"category": "...", "items": ["..."]}
   ]
-}}
+}
 
 ## COVER LETTER
 [plain text, sign off with candidate's real name]
 
 Terse. No explanations, no chatter. Do NOT self-score — scoring happens externally.
 """
+
+AGENT_SYSTEM_PROMPT = _AGENT_SYSTEM_TEMPLATE.replace(
+    "__FORBIDDEN_WORDS__", FORBIDDEN_WORDS_LINE
+).replace("__FORBIDDEN_PHRASES__", FORBIDDEN_PHRASES_LINE)
 
 
 # ---------------------------------------------------------------------------
@@ -251,9 +281,9 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
 
     # If section headers are missing, try to extract JSON directly from the full text
     if not resume_match:
-        resume_data = _extract_json(text)
+        resume_data = llm.extract_json(text)
     else:
-        resume_data = _extract_json(resume_match.group(1))
+        resume_data = llm.extract_json(resume_match.group(1))
 
     if not resume_data.get("experience"):
         logger.warning(
@@ -262,20 +292,11 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
 
     # Cover letter: if no section header, find text after the JSON block
     if cl_match:
-        cover_letter = _strip_fences(cl_match.group(1))
+        cover_letter = llm.strip_fences(cl_match.group(1))
     elif not resume_match:
-        depth = 0
-        json_end = 0
-        for i, c in enumerate(text):
-            if c == '{':
-                depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    json_end = i + 1
-                    break
-        if json_end:
-            remainder = text[json_end:]
+        span = llm.first_object_span(text)
+        if span:
+            remainder = text[span[1] :]
             remainder = re.sub(r"^```\s*", "", remainder.strip(), flags=re.MULTILINE)
             cl_text = re.sub(
                 r"^##\s*COVER LETTER\s*\n?", "", remainder, flags=re.IGNORECASE
@@ -380,16 +401,8 @@ def generate_cv_and_cl(
         model=llm.generation_model(),
         max_tokens=4096,
         system=[
-            {
-                "type": "text",
-                "text": AGENT_SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},
-            },
-            {
-                "type": "text",
-                "text": candidate_context,
-                "cache_control": {"type": "ephemeral"},
-            },
+            _cached(AGENT_SYSTEM_PROMPT),
+            _cached(candidate_context),
         ],
         messages=[{"role": "user", "content": user_message}],
     )
@@ -427,22 +440,16 @@ def trim_resume_for_fit(resume: dict, overflow_words: int) -> dict:
         f"Output the shortened JSON object now:"
     )
 
-    text = llm.complete_text(
+    trimmed = llm.complete_json(
         model=llm.screening_model(),
         max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user}],
-    ).strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        logger.warning(
-            "trim_resume_for_fit: JSON parse failed (%s); returning original.", e
-        )
+    )
+    if not trimmed:
+        logger.warning("trim_resume_for_fit: unparseable reply; returning original.")
         return resume
+    return trimmed
 
 
 def select_conditional_bullets(job_description: str, conditions: list[str]) -> list[bool]:
@@ -463,15 +470,19 @@ def select_conditional_bullets(job_description: str, conditions: list[str]) -> l
         f"Return ONLY a JSON array of {len(conditions)} booleans, one per condition in order."
     )
     try:
-        text = llm.complete_text(
+        data = llm.complete_json_array(
             model=llm.screening_model(),
             max_tokens=512,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
-        data = json.loads(_strip_fences(text))
-        if isinstance(data, list) and len(data) == len(conditions):
+        if len(data) == len(conditions):
             return [bool(x) for x in data]
+        logger.warning(
+            "select_conditional_bullets: got %d of %d decisions; including all.",
+            len(data),
+            len(conditions),
+        )
     except Exception as e:  # noqa: BLE001
         logger.warning("select_conditional_bullets failed (%s); including all.", e)
     return [True] * len(conditions)
@@ -518,11 +529,14 @@ _CHAT_CV_SYSTEM = (
     "sections, retitle) within the honesty rule above.\n"
     "- The summary's opening role descriptor must stay identical to the title of "
     "the first (most recent) experience entry. If one changes, change the other.\n"
+    "- Spoken languages live in the `languages` section only, never under "
+    "`skills`. Contact links go in the header's `linkedin`, `github` and "
+    "`portfolio` fields — those are what the page prints; links in prose are not.\n"
     "- Use the JOB DESCRIPTION to guide relevance and wording, but only surface "
     "experience the candidate truly has.\n"
     "- Keep it to one page and ATS-plain: no tables or graphics, lead bullets "
-    "with action verbs, prefer specific metrics, cut filler, and use no em "
-    "dashes, semicolons, or exclamation marks."
+    "with action verbs, prefer specific metrics, cut filler.\n"
+    "- " + FORBIDDEN_STYLE_RULE
 )
 
 _CHAT_CL_SYSTEM = (
@@ -538,7 +552,7 @@ _CHAT_CL_SYSTEM = (
     "the BASE CV or by what the candidate tells you in this chat. Ask instead.\n"
     "- Preserve any URLs already in the sign-off unless asked to change them.\n"
     "- Use the JOB DESCRIPTION to ground the letter in this specific role.\n"
-    "- No em dashes, semicolons, or exclamation marks."
+    "- " + FORBIDDEN_STYLE_RULE
 )
 
 _CHAT_CV_TOOL = {
@@ -608,84 +622,93 @@ def _history_messages(history: list[dict] | None) -> list[dict]:
     return messages
 
 
-def chat_edit_cv(
-    history: list[dict] | None,
-    current_cv: dict,
-    base_cv: dict,
-    user_prompt: str,
-    *,
-    job_title: str,
-    company: str,
-    job_description: str = "",
-) -> dict:
-    """Run one chat turn over the tailored resume.
+def _cv_document(value) -> dict | None:
+    """The resume the model returned, or None when it didn't edit one."""
+    return value if isinstance(value, dict) and value else None
 
-    Returns {"message": str, "updated_cv": dict | None}. `updated_cv` is None
-    when the assistant only asked a question or made no change.
-    """
-    base_cv_json = json.dumps(base_cv, indent=2)
-    current_cv_json = json.dumps(current_cv, indent=2)
-    jd = (job_description or "").strip() or "(no job description on file)"
 
-    job_context = (
-        f"TARGET JOB: {job_title} at {company}\n\n"
-        f"JOB DESCRIPTION:\n{jd}\n\n"
-        f"BASE CV (source of truth — never invent beyond this):\n{base_cv_json}"
-    )
+def _cl_document(value) -> str | None:
+    """The cover letter the model returned, or None when it didn't edit one."""
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
-    messages = _history_messages(history)
-    messages.append(
-        {
-            "role": "user",
-            "content": (
-                f"CURRENT RESUME (the live document to edit):\n{current_cv_json}\n\n"
-                f"MY REQUEST:\n{user_prompt}"
-            ),
-        }
-    )
 
-    data = llm.complete_tool(
-        model=llm.generation_model(),
-        max_tokens=8192,
-        system=[
-            {"type": "text", "text": _CHAT_CV_SYSTEM, "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": job_context, "cache_control": {"type": "ephemeral"}},
-        ],
+@dataclass(frozen=True)
+class _ChatSpec:
+    """Everything that differs between editing a resume and a cover letter."""
+
+    system: str
+    tool: dict
+    field: str
+    max_tokens: int
+    doc_label: str
+    render: Callable[[object], str]
+    document: Callable[[object], object]
+
+
+_CHAT_SPECS: dict[str, _ChatSpec] = {
+    "cv": _ChatSpec(
+        system=_CHAT_CV_SYSTEM,
         tool=_CHAT_CV_TOOL,
-        messages=messages,
-    )
-    message = (data.get("message") or "").strip()
-    updated = data.get("updated_cv")
-    updated_cv = updated if isinstance(updated, dict) and updated else None
-    if not message:
-        message = (
-            "I applied that." if updated_cv is not None
-            else "I couldn't work out what to change there — try rephrasing it."
-        )
-    return {"message": message, "updated_cv": updated_cv}
+        field="updated_cv",
+        max_tokens=8192,
+        doc_label="CURRENT RESUME",
+        render=lambda doc: json.dumps(doc, indent=2),
+        document=_cv_document,
+    ),
+    "cl": _ChatSpec(
+        system=_CHAT_CL_SYSTEM,
+        tool=_CHAT_CL_TOOL,
+        field="updated_cl",
+        max_tokens=4096,
+        doc_label="CURRENT COVER LETTER",
+        render=lambda doc: doc or "",
+        document=_cl_document,
+    ),
+}
+
+CHAT_TARGETS = tuple(_CHAT_SPECS)
 
 
-def chat_edit_cl(
+@dataclass(frozen=True)
+class ChatEdit:
+    """One chat turn's outcome.
+
+    `document` is the full replacement document (a resume dict for `cv`, letter
+    text for `cl`), or None when the assistant asked a clarifying question or
+    made no change. `message` is always present.
+    """
+
+    message: str
+    document: dict | str | None
+
+
+def chat_edit(
+    target: str,
     history: list[dict] | None,
-    current_cl: str,
+    current_doc: dict | str,
     base_cv: dict,
     user_prompt: str,
     *,
     job_title: str,
     company: str,
     job_description: str = "",
-) -> dict:
-    """Run one chat turn over the cover letter.
+) -> ChatEdit:
+    """Run one chat turn over the tailored resume (`cv`) or cover letter (`cl`).
 
-    Returns {"message": str, "updated_cl": str | None}.
+    The two documents differ only in how they're rendered into the prompt, which
+    tool the model answers with, and how the reply is normalized — all of which
+    live in `_CHAT_SPECS`. The turn itself is one shape.
     """
-    base_cv_json = json.dumps(base_cv, indent=2)
-    jd = (job_description or "").strip() or "(no job description on file)"
+    spec = _CHAT_SPECS.get(target)
+    if spec is None:
+        raise ValueError(f"unknown chat target {target!r}")
 
+    jd = (job_description or "").strip() or "(no job description on file)"
     job_context = (
         f"TARGET JOB: {job_title} at {company}\n\n"
         f"JOB DESCRIPTION:\n{jd}\n\n"
-        f"BASE CV (source of truth — never invent beyond this):\n{base_cv_json}"
+        f"BASE CV (source of truth — never invent beyond this):\n"
+        f"{json.dumps(base_cv, indent=2)}"
     )
 
     messages = _history_messages(history)
@@ -693,7 +716,8 @@ def chat_edit_cl(
         {
             "role": "user",
             "content": (
-                f"CURRENT COVER LETTER (the live document to edit):\n{current_cl}\n\n"
+                f"{spec.doc_label} (the live document to edit):\n"
+                f"{spec.render(current_doc)}\n\n"
                 f"MY REQUEST:\n{user_prompt}"
             ),
         }
@@ -701,23 +725,38 @@ def chat_edit_cl(
 
     data = llm.complete_tool(
         model=llm.generation_model(),
-        max_tokens=4096,
+        max_tokens=spec.max_tokens,
         system=[
-            {"type": "text", "text": _CHAT_CL_SYSTEM, "cache_control": {"type": "ephemeral"}},
-            {"type": "text", "text": job_context, "cache_control": {"type": "ephemeral"}},
+            _cached(spec.system),
+            _cached(job_context),
         ],
-        tool=_CHAT_CL_TOOL,
+        tool=spec.tool,
         messages=messages,
     )
+
+    document = spec.document(data.get(spec.field))
     message = (data.get("message") or "").strip()
-    updated = data.get("updated_cl")
-    updated_cl = updated.strip() if isinstance(updated, str) and updated.strip() else None
     if not message:
         message = (
-            "I applied that." if updated_cl is not None
+            "I applied that."
+            if document is not None
             else "I couldn't work out what to change there — try rephrasing it."
         )
-    return {"message": message, "updated_cl": updated_cl}
+    return ChatEdit(message=message, document=document)
+
+
+def _candidate_facts(base_cv: dict, profile_context: str | None) -> str:
+    """What the knockout check may judge from: the profile block and the
+    factual parts of the base CV (no bullets — wording is not a fact)."""
+    facts = {
+        key: base_cv.get(key)
+        for key in ("header", "summary", "languages", "education", "certifications", "skills")
+    }
+    facts["experience"] = [
+        {k: role.get(k) for k in ("company", "title", "period", "location")}
+        for role in base_cv.get("experience") or []
+    ]
+    return f"{profile_context or ''}\n\nBASE CV:\n{json.dumps(facts, indent=1)}"
 
 
 # ---------------------------------------------------------------------------
@@ -747,7 +786,8 @@ def tailor_cv_iterative(
     (pass_num: int, score: ats_scorer.AtsScore) so callers can update UI
     state without coupling.
     """
-    # Phase 1: analyze JD once
+    # Phase 1: analyze JD once, and run the knockout check once — hard
+    # requirements are about the candidate, not about this pass's wording.
     jd_analysis = ats_scorer.analyze_jd(job_description)
     logger.info(
         "JD analysis: %d must-have, %d nice-to-have, role=%s",
@@ -755,6 +795,11 @@ def tailor_cv_iterative(
         len(jd_analysis.nice_to_have_keywords),
         jd_analysis.role_summary[:80],
     )
+    unmet = ats_scorer.check_hard_requirements(
+        jd_analysis.hard_requirements, _candidate_facts(base_cv, profile_context)
+    )
+    if unmet:
+        logger.info("Hard requirements not met: %s", "; ".join(unmet))
 
     # Phase 2: initial generation
     result = generate_cv_and_cl(
@@ -773,7 +818,8 @@ def tailor_cv_iterative(
 
     # Phase 3: score v1
     score = ats_scorer.score_resume(
-        result.resume, jd_analysis, job_description, candidate_years
+        result.resume, jd_analysis, job_description, candidate_years,
+        job_title=job_title, unmet_requirements=unmet,
     )
     logger.info("Pass 1 score: %d/100 (decision=%s)", score.total, score.decision)
     if on_pass:
@@ -814,7 +860,8 @@ def tailor_cv_iterative(
         )
 
         polished_score = ats_scorer.score_resume(
-            polished.resume, jd_analysis, job_description, candidate_years
+            polished.resume, jd_analysis, job_description, candidate_years,
+            job_title=job_title, unmet_requirements=unmet,
         )
         logger.info(
             "Pass %d score: %d/100 (delta=%+d, decision=%s)",
@@ -977,14 +1024,8 @@ def screen_jobs(
         + instructions
     )
 
-    # Use system message with cache_control so Anthropic caches it
-    system_messages = [
-        {
-            "type": "text",
-            "text": cached_system_text,
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
+    # One cached block, reused across every batch below.
+    system_messages = [_cached(cached_system_text)]
 
     BATCH = 20
     results = []
@@ -1001,33 +1042,13 @@ def screen_jobs(
         # Only the job list changes per batch — the system block is cached
         user_message = f"### JOBS TO SCREEN ###\n{job_list}"
 
-        raw = (
-            llm.complete_text(
+        results.extend(
+            llm.complete_json_array(
                 model=llm.screening_model(),
                 max_tokens=4096,
                 system=system_messages,
                 messages=[{"role": "user", "content": user_message}],
             )
-            or "[]"
-        ).strip()
-        stripped = _strip_fences(raw)
-        try:
-            batch_results = json.loads(stripped)
-        except json.JSONDecodeError:
-            # Claude sometimes returns multiple JSON objects instead of an array
-            # Try wrapping in array brackets or parsing line by line
-            try:
-                batch_results = json.loads(f"[{stripped}]")
-            except json.JSONDecodeError:
-                # Parse individual JSON objects separated by newlines
-                batch_results = []
-                for match in re.finditer(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', stripped):
-                    try:
-                        batch_results.append(json.loads(match.group()))
-                    except json.JSONDecodeError:
-                        continue
-        if isinstance(batch_results, dict):
-            batch_results = [batch_results]
-        results.extend(batch_results)
+        )
 
     return results

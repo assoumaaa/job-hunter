@@ -12,10 +12,15 @@ embedding similarity on top.
 So the score here is composed of two clearly-separated layers:
 
 1.  **Deterministic (60 pts)** — pure Python, reproducible, transparent.
-    - Must-have keyword coverage (35)
-    - Nice-to-have keyword coverage (10)
-    - Years/seniority alignment (5)
-    - Structural completeness / parseability (10)
+    - Must-have keyword coverage (24, full marks at 80% — stuffing the last
+      few terms buys nothing) and nice-to-have coverage (6, full at 60%)
+    - Most-recent title vs the req title (10) — the strongest single signal
+      in Workday/LinkedIn-style ranking, and the one a keyword count misses
+    - Requirements (10): years computed from date ranges (5) plus the
+      knockout half (5) — any hard requirement the candidate does not meet
+      zeroes it and caps the decision below APPROVED
+    - Structural completeness / hygiene (10), less a point per bullet the
+      summary restates
 
 2.  **Independent LLM evaluator (40 pts)** — a separate Claude call wearing
     a "skeptical recruiter" hat. It has no knowledge that an AI wrote the CV.
@@ -35,7 +40,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from . import llm
+from . import llm, vocabulary
 
 logger = logging.getLogger(__name__)
 
@@ -58,13 +63,15 @@ class JDAnalysis:
 @dataclass
 class AtsScore:
     total: int
-    keyword: int  # 0-45
-    requirements: int  # 0-5
+    keyword: int  # 0-30
+    requirements: int  # 0-10 (years 0-5 + knockout 0/5)
     format: int  # 0-10
     semantic: int  # 0-15
     impact: int  # 0-15
     recruiter: int  # 0-10
     decision: str  # APPROVED | NEEDS_REVISION | REJECTED
+    title: int = 0  # 0-10
+    unmet_requirements: list[str] = field(default_factory=list)
     missing_must_have: list[str] = field(default_factory=list)
     missing_nice_to_have: list[str] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)  # plain-language gaps for UI
@@ -85,7 +92,9 @@ def to_api_dict(score: AtsScore) -> dict:
     """
     return {
         "keyword": score.keyword,
+        "title": score.title,
         "requirements": score.requirements,
+        "unmet_requirements": score.unmet_requirements,
         "format": score.format,
         "semantic": score.semantic,
         "impact": score.impact,
@@ -208,35 +217,132 @@ def _normalize(s: str) -> str:
     return s
 
 
+def _haystack(text: str) -> str:
+    """Text as the matcher sees it: synonyms folded, then normalized."""
+    return _normalize(vocabulary.canonicalize(text))
+
+
+def _keyword_pattern(keyword: str) -> re.Pattern | None:
+    """A regex matching `keyword` and its everyday variants: every word may
+    gain or lose a plural 's', and words may be joined by a space, a hyphen,
+    or nothing ("CI/CD pipelines", "ci-cd pipeline", "nodejs").
+
+    Pluralising only the last word made "APIs integration" (the JD's typo)
+    match nothing but that exact typo — and the generator, chasing the
+    keyword score, copied the typo onto the CV. Tolerance here removes the
+    incentive; the writing prompt can then insist on grammatical phrasing.
+    """
+    words = [w for w in re.split(r"[\s\-]+", _haystack(keyword)) if w]
+    if not words:
+        return None
+    pieces = []
+    for w in words:
+        # Only treat a trailing 's' as a plural when a real stem remains:
+        # "apis" -> "api", but "ios", "aws", "dns" stay whole ("io" would
+        # otherwise match socket.io).
+        plural = w.endswith("s") and len(w) > 3 and not w.endswith("ss")
+        pieces.append(re.escape(w[:-1] if plural else w) + "s?")
+    # word-boundary regex (allow . and + inside words like c++, node.js, c#)
+    return re.compile(r"(?<![\w])" + r"[\s\-]?".join(pieces) + r"(?![\w])")
+
+
 def _keyword_hit(keyword: str, haystack: str) -> bool:
-    """Match a keyword inside text using word-boundary matching plus a few
-    common variations (plurals, hyphenation, ampersand vs and)."""
-    kw = _normalize(keyword)
-    if not kw:
-        return False
-    # Generate variants
-    variants = {
-        kw,
-        kw.replace("-", " "),
-        kw.replace(" ", "-"),
-        kw.replace(" & ", " and "),
-    }
-    if kw.endswith("s"):
-        variants.add(kw[:-1])
-    else:
-        variants.add(kw + "s")
-    for v in variants:
-        # word-boundary regex (allow . and + inside words like c++, node.js, c#)
-        pattern = r"(?<![\w])" + re.escape(v) + r"(?![\w])"
-        if re.search(pattern, haystack):
-            return True
-    return False
+    """Match a keyword inside normalized text, tolerant of plural and
+    hyphenation differences (see `_keyword_pattern`)."""
+    pattern = _keyword_pattern(keyword)
+    return bool(pattern and pattern.search(haystack))
 
 
 def _keyword_coverage(keywords: list[str], haystack: str) -> tuple[int, list[str]]:
     hits = sum(1 for k in keywords if _keyword_hit(k, haystack))
     missing = [k for k in keywords if not _keyword_hit(k, haystack)]
     return hits, missing
+
+
+def _keyword_points(keywords: list[str], haystack: str, max_points: int, ceiling: float) -> int:
+    """Points for keyword coverage, saturating at `ceiling` coverage.
+
+    Full marks at 80% of the must-haves is how a recruiter reads a CV — the
+    last two obscure terms do not change the verdict — and it removes the
+    reward for stuffing them in. No keywords at all earns most of the marks,
+    as before, so a JD the analyzer could not read is not a penalty."""
+    if not keywords:
+        return int(round(max_points * 0.85))
+    coverage = sum(1 for k in keywords if _keyword_hit(k, haystack)) / len(keywords)
+    return int(round(max_points * min(1.0, coverage / ceiling)))
+
+
+# Words that describe seniority or format, not the job — dropped before two
+# titles are compared.
+_TITLE_NOISE = frozenset(
+    "senior junior lead staff principal sr jr i ii iii iv v mid level intern "
+    "associate remote hybrid onsite on-site contract fulltime full-time "
+    "parttime part-time".split()
+)
+
+
+def _title_tokens(title) -> set[str]:
+    """The meaningful words of a title: the trailing location or bracket is
+    cut ("... - UAE", "... (Remote)"), synonyms folded ("Developer" is
+    "Engineer"), seniority words dropped."""
+    head = re.split(r"\s+[-–—|/]\s+|\s*\(", str(title or ""), maxsplit=1)[0]
+    return {
+        t for t in vocabulary.tokens(vocabulary.canonicalize(head)) if t not in _TITLE_NOISE
+    }
+
+
+def _title_score(resume: dict, job_title: str | None) -> int:
+    """0-10 for how much of the req title the candidate's titles cover. The
+    most recent title counts in full; any earlier title at a discount, the way
+    ranking systems weigh 'current title' above 'has held title'."""
+    wanted = _title_tokens(job_title)
+    if not wanted:
+        return 0
+    titles = [exp.get("title") for exp in resume.get("experience") or []]
+    overlaps = [len(wanted & _title_tokens(t)) / len(wanted) for t in titles if t]
+    if not overlaps:
+        return 0
+    best = max([overlaps[0]] + [0.6 * o for o in overlaps[1:]])
+    return int(round(10 * best))
+
+
+# A metric worth protecting from repetition: two or more digits, or a unit
+# ("12%", "500+", "2M+", "3x"). A bare "5+" is too common to be a signature.
+_METRIC_TOKEN = re.compile(r"(?<![\w])(\d[\d,.]*)\s?(%|\+|k|m|b|x)\+?(?![\w])", re.IGNORECASE)
+
+
+def _metric_signatures(text: str) -> set[str]:
+    out = set()
+    for digits, unit in _METRIC_TOKEN.findall(text or ""):
+        if len(re.sub(r"\D", "", digits)) >= 2 or unit.lower() in "%kmbx":
+            out.add(f"{digits}{unit}".lower())
+    return out
+
+
+def _word_ngrams(text: str, n: int = 5) -> set[str]:
+    words = _normalize(text).split()
+    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def _summary_repeats(resume: dict) -> list[str]:
+    """Bullets whose metric or wording the summary restates. The summary is
+    meant to position, the bullets to prove; the same '500+ modules for 100+
+    clients' twice on one page reads as padding to a recruiter."""
+    summary = str(resume.get("summary") or "")
+    if not summary.strip():
+        return []
+    summary_metrics = _metric_signatures(summary)
+    summary_ngrams = _word_ngrams(summary)
+    issues = []
+    for i, exp in enumerate(resume.get("experience") or []):
+        for j, bullet in enumerate(exp.get("bullets") or []):
+            text = str(bullet)
+            shared_metric = summary_metrics & _metric_signatures(text)
+            shared_phrase = summary_ngrams & _word_ngrams(text)
+            if shared_metric or shared_phrase:
+                what = sorted(shared_metric)[0] if shared_metric else f'"{sorted(shared_phrase)[0]}"'
+                issues.append(f"Summary restates experience[{i}].bullets[{j}] ({what})")
+    return issues
 
 
 def _bullet_count(resume: dict) -> int:
@@ -291,7 +397,7 @@ def _format_score(resume: dict) -> tuple[int, list[str]]:
     return max(0, score), issues
 
 
-def _requirements_score(jd: JDAnalysis, candidate_years: int | None) -> int:
+def _years_score(jd: JDAnalysis, candidate_years: float | None) -> int:
     """0-5 pts for years/seniority alignment."""
     if jd.required_years is None or candidate_years is None:
         return 4  # benefit of the doubt
@@ -303,6 +409,56 @@ def _requirements_score(jd: JDAnalysis, candidate_years: int | None) -> int:
     if gap <= 2:
         return 2
     return 0
+
+
+# ---------------------------------------------------------------------------
+# Hard requirements — the knockout step. A real ATS rejects on the form
+# ("authorised to work in the UAE?", "5+ years Python?") before anyone reads a
+# bullet. `analyze_jd` already extracts these; this checks them once per job
+# against the candidate's facts, not against the tailored wording.
+# ---------------------------------------------------------------------------
+
+_REQUIREMENTS_SYSTEM = (
+    "You check a candidate against a job's non-negotiable requirements. Judge "
+    "each requirement from the CANDIDATE FACTS only. Use \"unmet\" only when "
+    "the facts clearly contradict the requirement; when the facts are silent, "
+    "answer \"unknown\", never guess. Output a JSON array only."
+)
+
+
+def check_hard_requirements(hard_requirements: list[str], candidate_facts: str) -> list[str]:
+    """The requirements the candidate clearly does not meet. Empty when there
+    are none to check, when everything is met or unknown, or when the check
+    itself fails — a knockout must never come from a broken call."""
+    requirements = [str(r).strip() for r in hard_requirements or [] if str(r).strip()]
+    if not requirements:
+        return []
+    numbered = "\n".join(f"{i + 1}. {r}" for i, r in enumerate(requirements))
+    user = (
+        f"REQUIREMENTS:\n{numbered}\n\n"
+        f"CANDIDATE FACTS:\n{(candidate_facts or '')[:6000]}\n\n"
+        f"Return ONLY a JSON array with one object per requirement, in order: "
+        f'[{{"requirement": "...", "status": "met" | "unmet" | "unknown", "evidence": "short"}}]'
+    )
+    try:
+        rows = llm.complete_json_array(
+            model=llm.screening_model(),
+            max_tokens=1024,
+            system=_REQUIREMENTS_SYSTEM,
+            messages=[{"role": "user", "content": user}],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hard-requirement check failed (%s); treating as unknown.", e)
+        return []
+    unmet = []
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict) or str(row.get("status", "")).lower() != "unmet":
+            continue
+        # Prefer our own wording when the reply lines up one-to-one.
+        name = requirements[i] if len(rows) == len(requirements) else str(row.get("requirement") or "")
+        if name.strip():
+            unmet.append(name.strip())
+    return unmet
 
 
 # ---------------------------------------------------------------------------
@@ -383,31 +539,35 @@ def score_resume(
     resume: dict,
     jd_analysis: JDAnalysis,
     job_description: str,
-    candidate_years: int | None = None,
+    candidate_years: float | None = None,
+    job_title: str | None = None,
+    unmet_requirements: list[str] | None = None,
 ) -> AtsScore:
-    haystack = _normalize(_resume_text(resume))
+    haystack = _haystack(_resume_text(resume))
 
-    must_hits, missing_must = _keyword_coverage(
-        jd_analysis.must_have_keywords, haystack
-    )
-    nice_hits, missing_nice = _keyword_coverage(
-        jd_analysis.nice_to_have_keywords, haystack
-    )
+    _, missing_must = _keyword_coverage(jd_analysis.must_have_keywords, haystack)
+    _, missing_nice = _keyword_coverage(jd_analysis.nice_to_have_keywords, haystack)
+    keyword_score = _keyword_points(
+        jd_analysis.must_have_keywords, haystack, 24, 0.8
+    ) + _keyword_points(jd_analysis.nice_to_have_keywords, haystack, 6, 0.6)  # 0-30
 
-    must_total = len(jd_analysis.must_have_keywords)
-    nice_total = len(jd_analysis.nice_to_have_keywords)
-    must_score = int(round((must_hits / must_total) * 35)) if must_total else 30
-    nice_score = int(round((nice_hits / nice_total) * 10)) if nice_total else 8
-    keyword_score = must_score + nice_score  # 0-45
+    title_score = _title_score(resume, job_title)
 
-    req_score = _requirements_score(jd_analysis, candidate_years)
+    unmet = [u for u in (unmet_requirements or []) if u]
+    req_score = _years_score(jd_analysis, candidate_years) + (0 if unmet else 5)
+
     fmt_score, fmt_issues = _format_score(resume)
+    repeats = _summary_repeats(resume)
+    fmt_score = max(0, fmt_score - min(2, len(repeats)))
 
     semantic, impact, recruiter, notes = _llm_evaluate(
         resume, jd_analysis, job_description
     )
 
-    total = keyword_score + req_score + fmt_score + semantic + impact + recruiter
+    total = (
+        keyword_score + title_score + req_score + fmt_score
+        + semantic + impact + recruiter
+    )
 
     if total >= APPROVE_THRESHOLD:
         decision = "APPROVED"
@@ -415,21 +575,27 @@ def score_resume(
         decision = "REJECTED"
     else:
         decision = "NEEDS_REVISION"
+    if unmet and decision == "APPROVED":
+        # A knockout is a knockout however good the wording is.
+        decision = "NEEDS_REVISION"
 
-    gaps: list[str] = []
+    gaps: list[str] = [f"Hard requirement not met: {u}" for u in unmet]
     if missing_must:
         gaps.append(f"Missing must-have keywords: {', '.join(missing_must[:6])}")
     if _metric_bullet_ratio(resume) < 0.4:
         gaps.append("Few bullets carry concrete metrics or outcomes")
     if fmt_issues:
         gaps.extend(fmt_issues[:2])
+    gaps.extend(repeats[:2])
     if notes:
         gaps.append(notes)
 
     return AtsScore(
         total=max(0, min(100, total)),
         keyword=keyword_score,
+        title=title_score,
         requirements=req_score,
+        unmet_requirements=unmet,
         format=fmt_score,
         semantic=semantic,
         impact=impact,
