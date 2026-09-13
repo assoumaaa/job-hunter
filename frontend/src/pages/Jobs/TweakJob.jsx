@@ -158,6 +158,13 @@ export default function TweakJob() {
 		return `${job.title} · ${job.company}`;
 	}, [job]);
 
+	// Requirements this job asks for that the base CV cannot honestly claim:
+	// reported here instead of being written into the CV.
+	const notMet = useMemo(() => {
+		const list = parseCvJson(job?.atsBreakdown)?.not_met;
+		return Array.isArray(list) ? list : [];
+	}, [job]);
+
 	if (!job) {
 		return (
 			<div className="flex flex-col h-full overflow-hidden">
@@ -268,6 +275,23 @@ export default function TweakJob() {
 
 				{/* Chat panel */}
 				<div className="w-[380px] shrink-0 border-l border-line bg-surface flex flex-col min-h-0">
+					{activeTab === "cv" && notMet.length > 0 && (
+						<section aria-labelledby="not-met-heading" className="shrink-0 border-b border-line px-3 py-2.5">
+							<h2 id="not-met-heading" className="text-micro font-semibold text-ink-2">
+								Not met by your CV ({notMet.length})
+							</h2>
+							<p className="text-micro text-ink-3 mt-0.5 leading-relaxed">
+								This job asks for these and your CV does not show them, so they were left out.
+							</p>
+							<ul className="mt-1.5 max-h-32 overflow-y-auto space-y-1 list-disc pl-4">
+								{notMet.map((requirement, i) => (
+									<li key={`${i}-${requirement}`} className="text-label text-ink leading-snug">
+										{requirement}
+									</li>
+								))}
+							</ul>
+						</section>
+					)}
 					<div
 						ref={transcriptRef}
 						role="log"

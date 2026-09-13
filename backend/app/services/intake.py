@@ -402,7 +402,14 @@ def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
             "rejected" if score and score.decision == "REJECTED" else "done"
         )
         job.atsScore = result.ats_score
-        job.atsBreakdown = json.dumps(ats_scorer.to_api_dict(score)) if score else None
+        breakdown = ats_scorer.to_api_dict(score) if score else None
+        if breakdown is not None:
+            # What this CV cannot honestly claim for this job: reported to the
+            # candidate next to the score, never written into the CV.
+            coverage = claude.parse_coverage(result.coverage)
+            breakdown["coverage"] = coverage
+            breakdown["not_met"] = [row["requirement"] for row in coverage if row["status"] == "NOT MET"]
+        job.atsBreakdown = json.dumps(breakdown) if breakdown else None
         job.generatedCv = json.dumps(assembled)
         job.generatedCl = result.cover_letter
         job.generatedAt = datetime.utcnow()

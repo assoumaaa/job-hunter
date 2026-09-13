@@ -117,7 +117,7 @@ _AGENT_SYSTEM_TEMPLATE = """You are a professional CV writer and ATS optimizatio
 Extract 15-20 keywords/phrases from the JD. These are the exact terms the ATS will scan for.
 
 ## STEP 2: DETECT ARCHETYPE
-Classify the role into one (or hybrid of two):
+If the user message supplies the archetype, skip this step and use that one. Otherwise classify the role into one (or hybrid of two):
 
 | Archetype | Signals in JD |
 |-----------|---------------|
@@ -129,6 +129,90 @@ Classify the role into one (or hybrid of two):
 | Solutions / Consulting | "client-facing", "integrations", "enterprise", "demos", "pre-sales" |
 | Forward Deployed | "deploy", "prototype", "field", "fast delivery", "client site" |
 | Product Manager | "PRD", "roadmap", "discovery", "stakeholder" |
+| Mobile | "iOS", "Android", "React Native", "Flutter", "mobile app" |
+| Security | "AppSec", "penetration testing", "vulnerability", "compliance", "identity" |
+| Other | none of the signals above clearly dominates |
+
+## STEP 2.5: MAP REQUIREMENTS TO EVIDENCE
+
+Do this before writing a single line of the CV. For every requirement in the
+JD (take the Requirements / Qualifications / What We're Looking For sections
+plus anything phrased as a responsibility), work out what the requirement is
+really asking for, then go looking through the base CV and notes for work
+that satisfies it.
+
+Read past the vocabulary. A requirement names a capability; the base CV may
+describe the same capability in different words, in a different domain, at a
+different scale, or under a different tool. That is a match. Ask "did the
+candidate do the underlying thing" not "does the base CV contain this word".
+
+Classify each requirement:
+
+- MET: the base CV or notes contain work that genuinely satisfies it, however
+  it is currently worded. Record the exact source line.
+- PARTIAL: adjacent or transferable work exists. The candidate has done
+  something of the same shape, at smaller scale, in a different domain, or
+  one layer away in the stack. Record the source line and what specifically
+  is missing.
+- NOT MET: nothing in the base CV or notes supports it.
+
+Then write the CV to make MET and PARTIAL visible:
+
+- MET: rephrase the real work so a reader scanning for that requirement sees
+  it. Use the JD's vocabulary for the parts that are actually true, keep the
+  base CV's facts, and surface the source bullet earlier in the role. This is
+  the main job of tailoring and you should be aggressive about it.
+- PARTIAL: state exactly what was done, in the JD's frame, without implying
+  the missing part. "Built event-driven pipelines over MQTT and TimescaleDB
+  handling device telemetry at scale" is an honest answer to a Kafka
+  requirement. "Kafka-backed event streaming" is not.
+- NOT MET: the requirement does not appear in the CV at all. Do not gesture
+  at it, do not hedge toward it, do not pad an adjacent bullet with its
+  vocabulary to create the impression of coverage. Leave it absent.
+
+The test for any rephrasing: if the interviewer opened on this bullet and
+asked the candidate to walk through it in detail, would the candidate be
+describing work they actually did? If the honest answer requires them to say
+"well, not exactly", the bullet is wrong. Rewrite it down to what is true.
+
+Worked examples, MET (rephrase hard, these are the wins):
+- JD wants "customer-facing technical discovery and POC delivery"; CV says
+  "conducted technical pre-sales feasibility analysis and solution scoping for
+  high-value client accounts, contributing to a 12% increase in sales
+  conversion" -> MET. Rephrase as technical discovery and POC scoping for
+  enterprise accounts, keep the 12% figure, move it up in the role.
+- JD wants "high-concurrency systems"; CV says "processing GBP 2M+ in monthly
+  transactions with load-balanced error handling across peak payment cycles"
+  -> MET. Lead with the throughput and the peak-load behavior.
+- JD wants "deploy containerized services"; CV skills list Docker and
+  Kubernetes and a bullet describes a deployed platform -> MET. Say the
+  platform shipped as containerized services.
+
+Worked examples, PARTIAL (frame it, do not inflate it):
+- JD wants Kafka; CV has MQTT plus TimescaleDB -> PARTIAL. Message-oriented
+  telemetry ingestion is the transferable part. Name MQTT, never Kafka.
+- JD wants SIP and real-time voice; CV has WebSocket real-time updates ->
+  PARTIAL. Real-time bidirectional transport is the transferable part. Name
+  WebSocket, never SIP.
+- JD wants an LLM gateway (LiteLLM, Portkey); CV has RAG pipelines and LLM
+  tooling adoption -> PARTIAL. Applied LLM engineering is the transferable
+  part. Never name a gateway product.
+
+Worked example, NOT MET:
+- JD requires Go; base CV names no Go -> NOT MET. Go appears nowhere. Do not
+  write "Go-based exporters", do not write "systems languages", do not list
+  it under skills.
+
+Emit the mapping before the CV so it can be audited, as a new output section
+placed after ## ARCHETYPE:
+
+## REQUIREMENT COVERAGE
+MET: <requirement> <- <base CV source line>
+PARTIAL: <requirement> <- <base CV source line> (missing: <what is absent>)
+NOT MET: <requirement>
+
+One line each, no commentary. Every requirement in the JD gets a line. This
+section is parsed separately and is never printed on the CV.
 
 ## STEP 3: TAILOR CV
 
@@ -137,6 +221,9 @@ The output CV MUST FILL exactly 1 page — no more, and no less. Target 90-100%
 of the page. A half-empty page reads as a thin resume and is just as wrong as
 an overflow, so do NOT shorten to be safe: when the space is there, prefer the
 base CV's fuller wording over a shorter paraphrase.
+Fill remaining space only with detail already present in the base CV or notes.
+If there is nothing true left to add, a shorter page is the correct outcome.
+Never pad a bullet with JD vocabulary to fill a line.
 - Summary: 2-3 lines (~200 characters)
 - Bullets can wrap to 2 lines — that's fine. But avoid wrapping where just 1-2 words spill to line 2. Either make it fit 1 line or fill out 2 full lines with more useful detail.
 - If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
@@ -149,6 +236,11 @@ base CV's fuller wording over a shorter paraphrase.
 - Per role you write ONLY the title and the bullets, most relevant to this JD first. Company, location and dates are copied from the base CV; echo the company name so roles line up, and never alter it.
 - A role WITHOUT notes keeps exactly the base CV's bullets: rephrase and reorder them, never add or remove one.
 - NEVER invent projects, metrics, or experience that is not in the base CV or the role's notes
+- Every bullet you write, from notes or from a base bullet, is checked after
+  the fact. Every proper noun, tool, protocol, language, framework, and number
+  in it must appear in that role's base bullets or notes. A bullet that
+  introduces anything else is removed and the original base bullet is
+  restored. Do not smuggle a JD term in by softening it.
 
 ### Bullets from notes
 A role in the base CV may carry `notes`: the candidate's own unpolished record of what they did in that role. Notes are never printed; they are material to tailor from.
@@ -167,18 +259,37 @@ This single decision drives BOTH the dynamic title rule and the summary descript
 ### Title rule
 A role's title is either its base title or one of the titles listed in that role's `alternateTitles` (titles the candidate declared equally true of the role). Pick the one that matches the role-type decision: an engineering title for ENGINEERING, a consulting/solutions title for SOLUTIONS. A role with no `alternateTitles` keeps its title exactly. Never write any other title.
 
-### Keyword injection strategy (ethical, truth-based)
-Distribute the extracted keywords deliberately:
-- Summary: inject top 5 keywords naturally
-- First bullet of each role: inject 1-2 keywords
-- Skills section: mirror JD terminology ONLY for skills the base CV already claims. NEVER add a tool, framework, cloud provider, or practice the base CV does not list — not even if the JD stresses it. Rephrasing a real skill in the JD's words is fine; adding an unclaimed one is a fabrication and disqualifies the candidate.
-- Mirror the JD's vocabulary, not its grammar. Keep every phrase grammatical ("API integration", not "APIs integration"); the ATS matcher tolerates plural differences, so copying a typo gains nothing and reads as carelessness.
-- Reformulate existing experience with JD vocabulary. Examples:
-  - JD says "CI/CD pipelines", CV says "automated deployment" -> "CI/CD pipeline automation"
-  - JD says "stakeholder management", CV says "collaborated with teams" -> "stakeholder management across engineering, product, and operations"
-  - JD says "RESTful APIs", CV says "built web services" -> "designed and shipped RESTful APIs"
-  - JD says "RAG pipelines", CV says "LLM workflows with retrieval" -> "RAG pipeline design and LLM orchestration"
-NEVER add skills the candidate does not have. Only reformulate what exists.
+### Keyword injection strategy (gated by truth, never by quota)
+There is NO keyword quota. A keyword goes in ONLY if the base CV or that
+role's notes already state the underlying fact. Most JD keywords will not
+qualify. That is the expected outcome, not a failure.
+
+Before writing any keyword anywhere, locate the exact base CV or notes line
+that supports it. If you cannot point to one, the keyword does not appear in
+the output in any form: not as a tool name, not as a parenthetical, not as a
+compound adjective ("WebRTC-compatible", "Kafka-backed",
+"Prometheus-instrumented", "OpenAPI-documented"), not in the summary, not in
+skills, not in the cover letter.
+
+Reformulation means renaming work the base CV already describes. It NEVER
+means adding a capability, protocol, tool, language, or system the base CV
+does not name.
+
+ALLOWED (same fact, JD's vocabulary):
+- CV "automated deployment" -> "CI/CD pipeline automation"
+- CV "built web services" -> "designed and shipped RESTful APIs"
+- CV "collaborated with teams" -> "stakeholder management across engineering,
+  product, and operations"
+
+REFUSED (JD asks, base CV does not support, so it stays out):
+- JD "SIP signalling", CV "WebSocket-based updates" -> keep "WebSocket-based
+  updates". Do NOT write "WebSocket and SIP signalling stacks".
+- JD "Kafka", CV "MQTT and TimescaleDB" -> keep MQTT and TimescaleDB. Do NOT
+  write "Kafka-backed event streaming".
+- JD "Go", base CV names no Go -> Go does not appear in the output.
+- JD "OpenTelemetry", CV "load-balanced error handling" -> do NOT write
+  "OpenTelemetry trace exports".
+- JD "LiteLLM", CV "LLM tooling" -> keep "LLM tooling". Do NOT name a gateway.
 
 ### Archetype-based framing
 Reorder bullets within each role so the most relevant to the detected archetype come first.
@@ -202,6 +313,9 @@ Identify the employer's industry/domain from the JD (cybersecurity, fintech, hea
 - Vary sentence structure: don't start every bullet the same way
 - Mix sentence lengths: short. Then longer with context. Short again.
 - No passive voice. Action verbs, direct language.
+- One idea per bullet. Max two lines. If a bullet stacks three or more
+  unrelated systems, split it or drop the weaker half.
+- No em dashes, semicolons, or exclamation marks.
 
 ## STEP 4: COVER LETTER
 - Max 300 words. P1 hook, P2 2-3 metrics, P3 close.
@@ -211,6 +325,7 @@ Identify the employer's industry/domain from the JD (cybersecurity, fintech, hea
 - Reference something SPECIFIC from the JD and map it to something SPECIFIC from the CV.
 - Use the candidate's LinkedIn/GitHub URLs if provided. Never invent URLs.
 - No generic "I would love the opportunity" -- name the actual reason.
+- Name only what the base CV shows. Never mention a requirement, tool, protocol, or language the base CV does not support, not even to call it a gap, to say you are learning it, or to promise you would pick it up fast. The candidate sees the gap list separately; the letter sells what is true.
 
 ## FORBIDDEN
 Words: __FORBIDDEN_WORDS__
@@ -224,6 +339,11 @@ Style: No em dashes, semicolons, exclamation marks. No hedging. No corporate-spe
 
 ## ARCHETYPE
 [detected archetype name]
+
+## REQUIREMENT COVERAGE
+MET: <requirement> <- <base CV source line>
+PARTIAL: <requirement> <- <base CV source line> (missing: <what is absent>)
+NOT MET: <requirement>
 
 ## RESUME
 {
@@ -259,6 +379,9 @@ class GenerationResult:
     cover_letter: str
     pass_num: int
     ats: ats_scorer.AtsScore | None = None  # the one score value, whole
+    # The REQUIREMENT COVERAGE section: one MET / PARTIAL / NOT MET line per JD
+    # requirement. Reported to the candidate, never fed back into a pass.
+    coverage: str | None = None
 
     @property
     def ats_score(self) -> int:
@@ -269,6 +392,37 @@ class GenerationResult:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+_COVERAGE_LINE = re.compile(r"^(NOT MET|PARTIAL|MET)\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_COVERAGE_SOURCE = re.compile(r"\s*(?:<-|←)\s*")
+_COVERAGE_MISSING = re.compile(r"\s*\(missing:\s*(.*?)\)\s*$", re.IGNORECASE)
+
+
+def parse_coverage(text: str | None) -> list[dict]:
+    """The REQUIREMENT COVERAGE lines as rows of {status, requirement, source,
+    missing}, in order. A line that isn't a coverage line is skipped."""
+    rows = []
+    for line in (text or "").splitlines():
+        match = _COVERAGE_LINE.match(line.strip().lstrip("-* "))
+        if not match:
+            continue
+        rest = match.group(2)
+        missing = _COVERAGE_MISSING.search(rest)
+        if missing:
+            rest = rest[: missing.start()]
+        parts = _COVERAGE_SOURCE.split(rest, maxsplit=1)
+        requirement = parts[0].strip()
+        if not requirement:
+            continue
+        source = parts[1].strip() if len(parts) > 1 else ""
+        rows.append({
+            "status": match.group(1).upper(),
+            "requirement": requirement,
+            "source": source or None,
+            "missing": (missing.group(1).strip() or None) if missing else None,
+        })
+    return rows
+
+
 def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
     resume_match = re.search(
         r"##\s*RESUME\s*\n([\s\S]*?)(?=##\s*COVER LETTER)", text, re.IGNORECASE
@@ -283,10 +437,16 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
     arch_match = re.search(
         r"##\s*ARCHETYPE\s*\n(.*?)(?=##)", text, re.IGNORECASE | re.DOTALL
     )
+    coverage_match = re.search(
+        r"##\s*REQUIREMENT COVERAGE\s*\n([\s\S]*?)(?=\n\s*##\s)", text, re.IGNORECASE
+    )
     if kw_match:
         logger.info("Extracted keywords: %s", kw_match.group(1).strip()[:200])
     if arch_match:
         logger.info("Detected archetype: %s", arch_match.group(1).strip())
+    coverage = (coverage_match.group(1).strip() or None) if coverage_match else None
+    if coverage:
+        logger.info("Requirement coverage: %d lines", len(coverage.splitlines()))
 
     # If section headers are missing, try to extract JSON directly from the full text
     if not resume_match:
@@ -295,8 +455,10 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
         resume_data = llm.extract_json(resume_match.group(1))
 
     if not resume_data.get("experience"):
-        logger.warning(
-            "Resume data missing experience. Keys: %s", list(resume_data.keys())
+        logger.error(
+            "Resume data empty or missing experience (keys: %s). Reply starts: %s",
+            list(resume_data.keys()),
+            text[:200],
         )
 
     # Cover letter: if no section header, find text after the JSON block
@@ -314,6 +476,9 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
             cl_text = ""
         cover_letter = cl_text
     else:
+        logger.warning(
+            "Generation reply has a RESUME section but no cover letter text; cover letter left empty."
+        )
         cover_letter = ""
 
     # Score is not parsed from the generator anymore — see ats_scorer
@@ -321,6 +486,7 @@ def _parse_agent_output(text: str, pass_num: int) -> GenerationResult:
         resume=resume_data,
         cover_letter=cover_letter,
         pass_num=pass_num,
+        coverage=coverage,
     )
 
 
@@ -357,11 +523,13 @@ def generate_cv_and_cl(
         else ""
     )
 
-    # Build archetype-specific hint (per-job — stays in user message)
+    # Build archetype-specific hint (per-job — stays in user message). The
+    # archetype was already decided at screening, so STEP 2 is skipped.
     archetype_hint = ""
     if archetype and archetype in ARCHETYPE_GENERATION_HINTS:
         archetype_hint = (
             f"\n\nROLE ARCHETYPE: {archetype.upper()}\n"
+            f"Skip STEP 2 and use the supplied archetype: {archetype.upper()}.\n"
             f"{ARCHETYPE_GENERATION_HINTS[archetype]}\n"
             f"Adapt the Professional Summary, bullet reordering, and cover letter framing to this archetype."
         )
@@ -401,7 +569,11 @@ def generate_cv_and_cl(
             f"JOB DESCRIPTION:\n{job_description}{archetype_hint}\n\n"
             f"PREVIOUS RESUME (Pass {pass_num - 1}, Score: {previous_score}/100):\n{prev_str}"
             f"{feedback_block}\n"
-            f"Apply the reviewer feedback verbatim where possible. Do NOT add or remove bullets — only rephrase. Bullets written from notes in the previous resume stay; never write a new one."
+            f"Apply the reviewer feedback ONLY where the base CV or notes support it. If "
+            f"the reviewer asks for a keyword the base CV does not support, leave it out "
+            f"and do not rephrase around it. A lower score with true claims beats a higher "
+            f"score with one false claim. Do NOT add or remove bullets, only rephrase. "
+            f"Bullets written from notes in the previous resume stay; never write a new one."
         )
 
     # Two cache breakpoints: system prompt (global) + candidate context (per-user).
@@ -545,6 +717,14 @@ _CHAT_CV_SYSTEM = (
     "experience the candidate truly has.\n"
     "- Keep it to one page and ATS-plain: no tables or graphics, lead bullets "
     "with action verbs, prefer specific metrics, cut filler.\n"
+    "- The CURRENT RESUME may contain claims that are NOT in the base CV, added "
+    "by an earlier tailoring pass. Treat it as untrusted. When the candidate asks "
+    "you to verify, check, or fix accuracy, compare every tool, protocol, "
+    "language, metric and system name in the current resume against the base CV, "
+    "list the unsupported ones in `message`, and ASK before keeping any of them. "
+    "Never resolve an unsupported claim by rewording it or softening it into an "
+    "adjective. Removing an unsupported claim is always an allowed edit and never "
+    "needs to be compensated for elsewhere.\n"
     "- " + FORBIDDEN_STYLE_RULE
 )
 
@@ -561,6 +741,14 @@ _CHAT_CL_SYSTEM = (
     "the BASE CV or by what the candidate tells you in this chat. Ask instead.\n"
     "- Preserve any URLs already in the sign-off unless asked to change them.\n"
     "- Use the JOB DESCRIPTION to ground the letter in this specific role.\n"
+    "- The CURRENT COVER LETTER may contain claims that are NOT in the base CV, "
+    "added by an earlier tailoring pass. Treat it as untrusted. When the candidate "
+    "asks you to verify, check, or fix accuracy, compare every tool, protocol, "
+    "language, metric and system name in the current cover letter against the base "
+    "CV, list the unsupported ones in `message`, and ASK before keeping any of them. "
+    "Never resolve an unsupported claim by rewording it or softening it into an "
+    "adjective. Removing an unsupported claim is always an allowed edit and never "
+    "needs to be compensated for elsewhere.\n"
     "- " + FORBIDDEN_STYLE_RULE
 )
 
@@ -837,6 +1025,22 @@ def tailor_cv_iterative(
         except Exception:
             pass
 
+    def grounding_violations(generated: GenerationResult) -> list[str]:
+        """Claims in `generated` the base CV does not support. The writer's MET
+        and PARTIAL source lines are offered as evidence; NOT MET lines never are."""
+        evidence = [
+            row["source"]
+            for row in parse_coverage(generated.coverage)
+            if row["status"] != "NOT MET" and row["source"]
+        ]
+        return ats_scorer.check_grounding(generated.resume, base_cv, evidence=evidence)
+
+    # A keyword score rises whether the keyword is true or not, so no pass is
+    # trusted on its score alone. Pass 1 is always kept; its violations are logged.
+    violations = grounding_violations(result)
+    if violations:
+        logger.warning("Pass %d introduced unsupported claims: %s", 1, "; ".join(violations))
+
     best_result, best_score = result, score
 
     # Phase 4: iterate
@@ -884,6 +1088,14 @@ def tailor_cv_iterative(
                 on_pass(pass_num, polished_score)
             except Exception:
                 pass
+
+        violations = grounding_violations(polished)
+        if violations:
+            logger.warning(
+                "Pass %d introduced unsupported claims: %s",
+                pass_num, "; ".join(violations),
+            )
+            break  # keep the previous, grounded result
 
         # Only accept polish if it actually improved the score
         if polished_score.total > best_score.total:

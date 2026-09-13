@@ -462,6 +462,72 @@ def check_hard_requirements(hard_requirements: list[str], candidate_facts: str) 
 
 
 # ---------------------------------------------------------------------------
+# Grounding — does the tailored resume claim what the base CV doesn't?
+# A keyword score rises when a keyword appears, true or not, so the cheapest
+# way to raise it is to invent. The tailor loop checks each pass with this
+# before it trusts that pass's score.
+# ---------------------------------------------------------------------------
+
+_GROUNDING_SYSTEM = (
+    "You audit a tailored resume against the candidate's base CV. The base CV is "
+    "the only source of truth, and each role's `notes` are part of it. List every "
+    "proper noun, tool, protocol, language, framework, and numeric claim in the "
+    "TAILORED RESUME that the BASE CV does not support. A claim is supported only "
+    "when the base CV states the same fact: rewording is fine, a new tool, "
+    "system or number is not. A term softened into an adjective (\"Kafka-backed\", "
+    "\"WebRTC-compatible\") is still a claim. Support found anywhere in the base "
+    "CV counts, no matter which section it is in: a tool named in a bullet "
+    "supports that tool in skills, the summary or another bullet. Output a JSON "
+    "array of strings, one "
+    "per unsupported claim, or [] when everything is supported."
+)
+_EMPTY_ARRAY = re.compile(r"\[\s*\]")
+
+
+def check_grounding(resume: dict, base_cv: dict, evidence: list[str] | None = None) -> list[str]:
+    """Every tool, protocol, language, framework, proper noun and number in
+    `resume` that `base_cv` does not support. `evidence` is the writer's own
+    list of base CV lines it relied on; the checker may use it to find support,
+    but a line counts only if the base CV really contains it.
+
+    Empty when everything is supported, and also when the check itself fails:
+    an unparseable reply or a failed call logs a warning and never blocks
+    generation."""
+    evidence_block = ""
+    lines = [str(e).strip() for e in evidence or [] if str(e).strip()]
+    if lines:
+        evidence_block = (
+            "WRITER'S EVIDENCE LINES (verify each against the BASE CV before accepting it):\n"
+            + "\n".join(f"- {line}" for line in lines)
+            + "\n\n"
+        )
+    user = (
+        f"BASE CV:\n{json.dumps(base_cv or {}, indent=1)[:12000]}\n\n"
+        f"{evidence_block}"
+        f"TAILORED RESUME:\n{json.dumps(resume or {}, indent=1)[:8000]}\n\n"
+        "Return ONLY the JSON array."
+    )
+    try:
+        text = llm.complete_text(
+            model=llm.screening_model(),
+            max_tokens=1024,
+            system=_GROUNDING_SYSTEM,
+            messages=[{"role": "user", "content": user}],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("grounding check failed (%s); treating the resume as grounded.", e)
+        return []
+    reply = llm.strip_fences(text or "").strip()
+    rows = llm.extract_json_array(reply)
+    if not rows and not _EMPTY_ARRAY.fullmatch(reply):
+        logger.warning(
+            "grounding check reply unparseable (%r); treating the resume as grounded.", reply[:120]
+        )
+        return []
+    return [row.strip() for row in rows if isinstance(row, str) and row.strip()]
+
+
+# ---------------------------------------------------------------------------
 # Independent LLM evaluator (Haiku, skeptical-recruiter persona)
 # ---------------------------------------------------------------------------
 

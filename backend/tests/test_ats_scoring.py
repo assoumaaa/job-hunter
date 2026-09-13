@@ -90,6 +90,75 @@ def test_check_hard_requirements_makes_no_call_when_there_are_none(fake_llm):
     assert fake.calls == []
 
 
+# --- grounding -------------------------------------------------------------
+
+_GROUNDING_BASE = {"experience": [{
+    "company": "Meikosoft",
+    "bullets": ["Implemented WebSocket-based updates for payment POS systems."],
+    "notes": "ran MQTT into TimescaleDB",
+}]}
+_GROUNDING_TAILORED = {"experience": [{
+    "company": "Meikosoft",
+    "bullets": ["Implemented WebSocket and SIP signalling stacks for payment POS systems."],
+}]}
+
+
+def test_check_grounding_returns_the_claims_the_base_cv_does_not_support(fake_llm):
+    from app.services import llm
+
+    fake = fake_llm([json.dumps(["SIP", "signalling stacks"])])
+    assert ats_scorer.check_grounding(_GROUNDING_TAILORED, _GROUNDING_BASE) == ["SIP", "signalling stacks"]
+    prompt = llm._call_text(fake.calls[0])
+    assert "WebSocket-based updates" in prompt  # the base CV, notes included
+    assert "ran MQTT into TimescaleDB" in prompt
+    assert "WebSocket and SIP signalling stacks" in prompt  # the generated resume
+
+
+def test_check_grounding_reports_nothing_for_a_grounded_resume(fake_llm):
+    fake_llm(["[]"])
+    assert ats_scorer.check_grounding(_GROUNDING_BASE, _GROUNDING_BASE) == []
+
+
+def test_check_grounding_fails_open_on_an_unparseable_reply(fake_llm, caplog):
+    import logging
+
+    fake_llm(["I could not decide."])
+    with caplog.at_level(logging.WARNING, logger="app.services.ats_scorer"):
+        assert ats_scorer.check_grounding(_GROUNDING_TAILORED, _GROUNDING_BASE) == []
+    assert any("grounding" in r.getMessage().lower() for r in caplog.records)
+
+
+def test_check_grounding_fails_open_when_the_call_raises(monkeypatch, caplog):
+    import logging
+
+    from app.services import llm
+
+    def overloaded(**kwargs):
+        raise RuntimeError("overloaded")
+
+    monkeypatch.setattr(llm, "complete_text", overloaded)
+    with caplog.at_level(logging.WARNING, logger="app.services.ats_scorer"):
+        assert ats_scorer.check_grounding(_GROUNDING_TAILORED, _GROUNDING_BASE) == []
+    assert any("overloaded" in r.getMessage() for r in caplog.records)
+
+
+def test_check_grounding_shows_the_writers_evidence_lines(fake_llm):
+    from app.services import llm
+
+    fake = fake_llm(["[]"])
+    ats_scorer.check_grounding(
+        _GROUNDING_TAILORED, _GROUNDING_BASE, evidence=["Implemented WebSocket-based updates"]
+    )
+    assert "Implemented WebSocket-based updates" in llm._call_text(fake.calls[0])
+
+
+def test_check_grounding_counts_support_from_any_section_of_the_base_cv():
+    # Live runs flagged WebSocket and TimescaleDB in Skills because the base CV
+    # named them in bullets rather than in its skills list.
+    assert "anywhere in the base CV" in ats_scorer._GROUNDING_SYSTEM
+    assert "which section" in ats_scorer._GROUNDING_SYSTEM
+
+
 # --- the composed score ----------------------------------------------------
 
 def test_score_composition_and_knockout_cap(fake_llm):

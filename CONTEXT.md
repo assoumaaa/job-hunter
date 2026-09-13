@@ -103,6 +103,20 @@ the code uses; keep them in step when the code changes.
   not re-derive accept/reject from a threshold of its own.
   `scripts/ats_calibration.py` tabulates score against application outcome —
   the check that tells you when the proxy stops being one.
+  Because a keyword score rises whether the keyword is true or not, the tailor
+  loop does not trust a score alone: `check_grounding` (screening model) lists
+  every tool, protocol, language, proper noun and number in a pass that the
+  base CV (notes included) does not support. Pass-1 violations are logged;
+  a later pass with any is never kept, whatever it scored. A failed check
+  returns [] and logs a warning, so a checker outage never blocks generation.
+
+- **Requirement coverage** — before writing, generation maps every JD
+  requirement to evidence and reports it as `## REQUIREMENT COVERAGE`
+  (MET / PARTIAL with its base-CV source line, NOT MET). `claude.parse_coverage`
+  reads it; the MET and PARTIAL source lines are the writer's evidence offered
+  to `check_grounding`; intake stores the rows in the ATS breakdown as
+  `coverage` and `not_met`, and the Edit document page lists the NOT MET
+  requirements. NOT MET lines are reported, never fed back into a later pass.
 
 - **PDF renderer** (`services/pdf_generator.py`) — `fit_and_render` is the deep
   entry: CSS auto-fit (8 tightening steps) then a trim callback, converging on

@@ -282,6 +282,29 @@ def test_generate_surfaces_parse_back_problems_as_gaps(db, monkeypatch):
     assert "header.phone not found in PDF text: '+1'" in gaps
 
 
+def test_generate_stores_the_requirements_the_cv_does_not_meet(db):
+    """The honest gap list for this application: reported to the candidate,
+    never written into the CV."""
+    user = _seed(db)
+    coverage = (
+        "## REQUIREMENT COVERAGE\n"
+        "MET: Python services <- Built Python FastAPI services handling 12k req/s\n"
+        "NOT MET: Go\n"
+        "NOT MET: SIP\n"
+    )
+    llm.use(_staged_llm(GENERATION_TEXT.replace("## RESUME\n", coverage + "## RESUME\n")))
+    pdf_generator.use_renderer(FakeRenderer([1]))
+
+    jobs = intake.generate_for_jobs(db, user, ["j1"])
+
+    breakdown = json.loads(jobs[0].atsBreakdown)
+    assert breakdown["not_met"] == ["Go", "SIP"]
+    assert breakdown["coverage"][0] == {
+        "status": "MET", "requirement": "Python services",
+        "source": "Built Python FastAPI services handling 12k req/s", "missing": None,
+    }
+
+
 # --- bullets written from a role's notes ------------------------------------
 
 NOTES = (
