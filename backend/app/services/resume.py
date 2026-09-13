@@ -280,13 +280,71 @@ def _jaccard(a: set, b: set) -> float:
     return len(a & b) / len(a | b) if a | b else 0.0
 
 
-def _faithful_bullets(generated: list, base: list) -> list[str]:
-    """The generated bullets, in their order, each proven against the base
-    bullet it rewrites — or replaced by that bullet's own text when it lost a
-    number, its named tools, or most of its length. A generated bullet with
-    no source takes the text of a base bullet nothing else claimed, so the
-    role's history stays whole and real."""
-    base_texts = [t for t in map(_bullet_text, base) if t.strip()]
+# --- bullets from notes ----------------------------------------------------
+# A role's `notes` are the candidate's private, unpolished record of the work:
+# never printed, only mined. Generation may write bullets from them, in place
+# of a base bullet this job cares less about or on top of the role's bullets,
+# and each is proven against the notes the way a rewrite is proven against its
+# base bullet.
+NOTES_MAX_PER_ROLE = 3
+NOTES_MIN_SHARE = 0.5    # of a bullet's words (after its verb) the notes must contain
+NOTES_MAX_OVERLAP = 0.5  # token Jaccard with a base bullet: a restatement, not new work
+
+
+def _numbers(text: str) -> set[str]:
+    """The numbers a text states, without the sentence's trailing punctuation."""
+    return {n.rstrip(",.") for n in _NUMBER.findall(text)}
+
+
+def _share_from(text: str, claimed: set[str]) -> float:
+    words = _tokens(" ".join(text.split()[1:]))
+    if not words:
+        return 0.0
+    return sum(1 for w in words if _token_claimed(w, claimed)) / len(words)
+
+
+def _proven_by_notes(base_role: dict):
+    """A check that a bullet comes from the role's notes: every number and
+    named tool appears in the notes or the role's own facts, at least half of
+    its words come from the notes, and it restates no base bullet. None for a
+    role without notes."""
+    notes = str(base_role.get("notes") or "")
+    if not notes.strip():
+        return None
+    base_texts = [t for t in map(_bullet_text, base_role.get("bullets") or []) if t.strip()]
+    role_facts = "\n".join(
+        [notes, str(base_role.get("company") or ""), str(base_role.get("title") or ""), *base_texts]
+    )
+    from_notes, from_role, stated = _tokens(notes), _tokens(role_facts), _numbers(role_facts)
+    base_tokens = [_tokens(t) for t in base_texts]
+
+    def proven(text: str) -> bool:
+        if _numbers(text) - stated:
+            return False
+        if any(not all(_token_claimed(t, from_role) for t in term) for term in _named_terms(text)):
+            return False
+        if _share_from(text, from_notes) < NOTES_MIN_SHARE:
+            return False
+        words = _tokens(text)
+        return all(_jaccard(words, b) < NOTES_MAX_OVERLAP for b in base_tokens)
+
+    return proven
+
+
+def _role_bullets(generated: list, base_role: dict) -> list[str]:
+    """The role's bullets for this job, in the generator's order (most relevant
+    first), each one proven.
+
+    A bullet that rewrites a base bullet must keep its numbers, its named tools
+    and most of its length. One that doesn't may instead stand as a bullet from
+    the role's notes (`_proven_by_notes`), at most NOTES_MAX_PER_ROLE of them:
+    that is how a note replaces a base bullet the job cares less about. A
+    rewrite proven neither way reverts to its base bullet's text, and a bullet
+    with no source at all takes the slot of a base bullet nothing claimed. Base
+    bullets the generator left out then come back, in base order, until the
+    role has as many bullets as the base CV, so only a proven note can take the
+    place of one the candidate wrote."""
+    base_texts = [t for t in map(_bullet_text, base_role.get("bullets") or []) if t.strip()]
     gen_texts = [t for t in map(_bullet_text, generated) if t.strip()]
     if not base_texts:
         return gen_texts
@@ -303,25 +361,43 @@ def _faithful_bullets(generated: list, base: list) -> list[str]:
         reverse=True,
     )
     source: dict[int, int] = {}
-    claimed: set[int] = set()
+    matched: set[int] = set()
     for sim, i, j in pairs:
         if sim < FAITHFUL_MIN_OVERLAP:
             break
-        if i in source or j in claimed:
+        if i in source or j in matched:
             continue
         source[i] = j
-        claimed.add(j)
+        matched.add(j)
+
+    from_notes = _proven_by_notes(base_role)
+    noted = 0
+    claimed: set[int] = set()
+    slots: list[str | None] = []  # None holds the place of a base bullet nothing claimed
+    for i, text in enumerate(gen_texts):
+        j = source.get(i)
+        if j is not None and _is_faithful(text, base_texts[j]):
+            slots.append(text)
+            claimed.add(j)
+        elif from_notes and noted < NOTES_MAX_PER_ROLE and from_notes(text):
+            slots.append(text)
+            noted += 1
+        elif j is not None:
+            slots.append(base_texts[j])
+            claimed.add(j)
+        else:
+            slots.append(None)
 
     spare = [j for j in range(len(base_texts)) if j not in claimed]
     out: list[str] = []
-    for i, text in enumerate(gen_texts):
-        if i in source:
-            original = base_texts[source[i]]
-            out.append(text if _is_faithful(text, original) else original)
+    for text in slots:
+        if text is not None:
+            out.append(text)
         elif spare:
             out.append(base_texts[spare.pop(0)])
-        # An extra bullet with no source and no slot left is dropped.
-    out.extend(base_texts[j] for j in spare)  # bullets the generator forgot
+        # An unproven bullet with no base bullet left to stand in is dropped.
+    while spare and len(out) < len(base_texts):
+        out.append(base_texts[spare.pop(0)])  # bullets the generator forgot
     return out
 
 
@@ -402,7 +478,10 @@ def merge_identity(
     role's bullets (plus its title, which the archetype rule may rewrite).
     Everything else is fact: copied verbatim here and omitted from the
     generation schema, so a model slip can't abbreviate a degree, reword a
-    date range, drop a job, or reorder the history.
+    date range, drop a job, or reorder the history. Bullets may come from a
+    role's private `notes` (see `_role_bullets`); the notes themselves never
+    reach the tailored CV, and a role that grew past its base count carries
+    `baseBulletCount` so the page-fit step gives the surplus back first.
 
     `links` ({"linkedin": url, "github": url, ...}) and `languages` are the
     Profile's copies of the same identity. They fill only what the base CV
@@ -430,19 +509,18 @@ def merge_identity(
         )
 
     # The base CV fixes the job list, its order, and each role's facts;
-    # generation only supplies the bullets and the (possibly retitled) role.
+    # generation only supplies the (possibly retitled) role and its bullets,
+    # each proven against the base bullets or the role's notes.
     generated_roles = generated.get("experience") or []
-    merged["experience"] = [
-        {
-            **base_role,
-            "title": _allowed_title(generated_role.get("title"), base_role),
-            "bullets": _faithful_bullets(
-                generated_role.get("bullets") or [], base_role.get("bullets") or []
-            ),
-        }
-        for base_role, generated_role in (
-            (role, generated_roles[i] if i < len(generated_roles) else {})
-            for i, role in enumerate(base.get("experience") or [])
-        )
-    ]
+    merged["experience"] = []
+    for i, base_role in enumerate(base.get("experience") or []):
+        generated_role = generated_roles[i] if i < len(generated_roles) else {}
+        bullets = _role_bullets(generated_role.get("bullets") or [], base_role)
+        base_count = sum(1 for b in base_role.get("bullets") or [] if _bullet_text(b).strip())
+        role = {key: value for key, value in base_role.items() if key != "notes"}
+        role["title"] = _allowed_title(generated_role.get("title"), base_role)
+        role["bullets"] = bullets
+        if len(bullets) > base_count:
+            role["baseBulletCount"] = base_count
+        merged["experience"].append(role)
     return merged

@@ -83,7 +83,7 @@ def _seed(db):
     return user
 
 
-def _staged_llm() -> llm.FakeLLM:
+def _staged_llm(generation_text: str = GENERATION_TEXT) -> llm.FakeLLM:
     """One adapter that answers each step of the pipeline by what it was asked."""
     fake = llm.FakeLLM(default="{}")
     # The job has no Kubernetes in it, so this bullet is dropped.
@@ -99,7 +99,7 @@ def _staged_llm() -> llm.FakeLLM:
         },
         prompt="must_have_keywords",
     )
-    fake.when(GENERATION_TEXT, prompt="professional CV writer")
+    fake.when(generation_text, prompt="professional CV writer")
     fake.when(
         {"semantic": 15, "impact": 15, "recruiter": 10, "notes": "strong"},
         prompt="skeptical, time-pressed technical recruiter",
@@ -230,6 +230,43 @@ def test_generate_computes_years_from_the_cv_dates_not_the_profile(db):
     assert "Years of experience: 1" not in prompt
 
 
+def test_generate_fits_the_page_by_dropping_items_never_by_rewriting_bullets(db):
+    """A CV that overflows past the tightest CSS step loses whole items
+    (recorded in fitNotes), not words. The Haiku trimmer, asked for ~30 words,
+    cut 88 across every bullet and its output skipped the detail floor — a
+    tailored CV read as a summary of the base one."""
+    three_bullets = [
+        "Built Python FastAPI services handling 12k req/s",
+        "Ran Kubernetes clusters across three regions",
+        "Interviewed engineering candidates",
+    ]
+    base = {**BASE_CV, "experience": [{**BASE_CV["experience"][0], "bullets": three_bullets}]}
+    user = User(id="u1", email="o@x.com", name="Omar")
+    db.add(user)
+    db.add(CV(userId="u1", structuredData=json.dumps(base)))
+    db.add(
+        Job(
+            id="j1", userId="u1", title="Backend Engineer", company="Acme",
+            description="We need Python and FastAPI.", relevanceStatus="good_fit",
+            agentStatus="pending", applicationStatus="new",
+        )
+    )
+    db.commit()
+
+    fake = _staged_llm()
+    llm.use(fake)
+    # Every CSS step overflows; the first render after one trim fits.
+    pdf_generator.use_renderer(FakeRenderer([2] * 8 + [1]))
+
+    jobs = intake.generate_for_jobs(db, user, ["j1"])
+
+    assert not any("overflows page 1" in llm._call_text(c) for c in fake.calls)
+    stored = json.loads(jobs[0].generatedCv)
+    bullets = stored["experience"][0]["bullets"]
+    assert bullets == three_bullets[:2]  # the last bullet went, whole
+    assert any("Interviewed engineering candidates" in n for n in stored["fitNotes"])
+
+
 def test_generate_surfaces_parse_back_problems_as_gaps(db, monkeypatch):
     """What the rendered PDF loses is reported on the job, next to the score."""
     user = _seed(db)
@@ -243,3 +280,92 @@ def test_generate_surfaces_parse_back_problems_as_gaps(db, monkeypatch):
 
     gaps = json.loads(jobs[0].atsBreakdown)["gaps"]
     assert "header.phone not found in PDF text: '+1'" in gaps
+
+
+# --- bullets written from a role's notes ------------------------------------
+
+NOTES = (
+    "Set up Prometheus and Grafana dashboards with alerts on Kafka consumer lag. "
+    "Wrote the on-call runbook for the payments API. "
+    "Migrated 40 cron jobs to Kubernetes CronJobs."
+)
+NOTE_BULLETS = [
+    "Wired Prometheus and Grafana dashboards with alerting on Kafka consumer lag",
+    "Wrote the on-call runbook for the payments API",
+    "Migrated 40 cron jobs to Kubernetes CronJobs",
+]
+BASE_BULLET = "Built Python FastAPI services handling 12k req/s"
+EIGHT_SKILLS = [{"category": "Backend", "items": [
+    "Python", "FastAPI", "Docker", "Kubernetes", "Redis", "Kafka", "Terraform", "Linux",
+]}]
+
+
+def _seed_with_notes(db, skills):
+    base = {
+        **BASE_CV,
+        "experience": [{**BASE_CV["experience"][0], "bullets": [BASE_BULLET], "notes": NOTES}],
+        "skills": skills,
+    }
+    user = User(id="u1", email="o@x.com", name="Omar")
+    db.add(user)
+    db.add(CV(userId="u1", structuredData=json.dumps(base)))
+    db.add(
+        Job(
+            id="j1", userId="u1", title="Backend Engineer", company="Acme",
+            description="We need Python and FastAPI.", relevanceStatus="good_fit",
+            agentStatus="pending", applicationStatus="new",
+        )
+    )
+    db.commit()
+    return user
+
+
+def _writing(summary, skills, bullets):
+    tailored = {
+        "summary": summary,
+        "experience": [{"company": "Acme", "title": "Software Engineer", "bullets": bullets}],
+        "skills": skills,
+    }
+    return (
+        "## KEYWORDS\nPython, FastAPI\n## ARCHETYPE\nbackend\n"
+        "## RESUME\n" + json.dumps(tailored) + "\n"
+        "## COVER LETTER\nDear team, I built Python systems.\n"
+    )
+
+
+def test_generate_writes_bullets_from_notes_and_stores_neither_notes_nor_markers(db):
+    user = _seed_with_notes(db, BASE_CV["skills"])
+    written = [NOTE_BULLETS[0], BASE_BULLET, NOTE_BULLETS[1]]  # most relevant first
+    llm.use(_staged_llm(_writing("Backend engineer.", BASE_CV["skills"], written)))
+    pdf_generator.use_renderer(FakeRenderer([1]))
+
+    jobs = intake.generate_for_jobs(db, user, ["j1"])
+
+    role = json.loads(jobs[0].generatedCv)["experience"][0]
+    assert role["bullets"] == written
+    # The stored CV is what the page shows: private notes and fit markers stay out.
+    assert "notes" not in role
+    assert "baseBulletCount" not in role
+
+
+def test_generate_gives_back_bullets_beyond_the_base_count_first_and_trims_until_the_page_fits(db):
+    """Three bullets beyond the base count, a summary sentence and four skill
+    items: eight trims, more than the six the LLM trimmer was budgeted. Each
+    deterministic trim is small and re-measured by a render, so the loop keeps
+    going until the page fits."""
+    user = _seed_with_notes(db, EIGHT_SKILLS)
+    summary = "Backend engineer. Ships Python services. Runs FastAPI in production."
+    llm.use(_staged_llm(_writing(summary, EIGHT_SKILLS, [BASE_BULLET, *NOTE_BULLETS])))
+    pdf_generator.use_renderer(FakeRenderer([2] * 8 * 8 + [1]))
+
+    jobs = intake.generate_for_jobs(db, user, ["j1"])
+
+    stored = json.loads(jobs[0].generatedCv)
+    assert stored["experience"][0]["bullets"] == [BASE_BULLET]
+    assert stored["summary"] == "Backend engineer. Ships Python services."
+    assert stored["skills"][0]["items"] == ["Python", "FastAPI", "Docker", "Kubernetes"]
+    assert stored["fitNotes"] == [
+        f"Dropped to fit one page: Acme bullet 4 ({NOTE_BULLETS[2]!r})",
+        f"Dropped to fit one page: Acme bullet 3 ({NOTE_BULLETS[1]!r})",
+        f"Dropped to fit one page: Acme bullet 2 ({NOTE_BULLETS[0]!r})",
+    ]

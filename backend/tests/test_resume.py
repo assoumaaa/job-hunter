@@ -282,3 +282,88 @@ def test_merge_identity_replaces_a_bullet_with_no_source_in_the_base_cv():
     out = _merge_bullets([invented, _FAITHFUL_WS, _FAITHFUL_IOT])
     # The orphan took the slot; the one base bullet nothing else matched fills it.
     assert out == [_MEIKO["bullets"][0], _FAITHFUL_WS, _FAITHFUL_IOT]
+
+
+# --- bullets from notes: a role's private record of the work ---------------
+
+_MEIKO_NOTES = (
+    "On the Energy IoT platform I ran Kafka between the MQTT bridge and TimescaleDB, "
+    "and set up Prometheus and Grafana alerts on consumer lag. When tariff recalculation "
+    "spiked we added partitions to go from 3 to 12 consumers. Wrote the OpenAPI spec for "
+    "the Merchant Hub public API with idempotency keys and per-merchant rate limits. "
+    "Moved the Flask services onto Kubernetes with Helm charts and sealed secrets. "
+    "Ran the on-call rotation for the payments gateway and wrote its runbook."
+)
+_NOTE_KAFKA = "Scaled Kafka consumers from 3 to 12 by adding partitions when tariff recalculation spiked, with Prometheus and Grafana alerts on consumer lag."
+_NOTE_API = "Wrote the OpenAPI spec for the Merchant Hub public API, with idempotency keys and per-merchant rate limits."
+_NOTE_K8S = "Moved the Flask services onto Kubernetes with Helm charts and sealed secrets."
+_NOTE_ONCALL = "Ran the on-call rotation for the payments gateway and wrote its runbook."
+_REWRITES = [_FAITHFUL_HUB, _FAITHFUL_WS, _FAITHFUL_IOT]
+
+
+def _merge_role(generated_bullets, notes=_MEIKO_NOTES):
+    base_role = {**_MEIKO, "notes": notes} if notes is not None else _MEIKO
+    generated = {"experience": [{"company": "Meikosoft", "bullets": generated_bullets}]}
+    return resume.merge_identity(generated, {"experience": [base_role]})["experience"][0]
+
+
+def test_merge_identity_lets_a_proven_note_replace_a_base_bullet():
+    # The generator ranked a note above the IoT bullet and left that bullet out.
+    role = _merge_role([_FAITHFUL_HUB, _NOTE_KAFKA, _FAITHFUL_WS])
+    assert role["bullets"] == [_FAITHFUL_HUB, _NOTE_KAFKA, _FAITHFUL_WS]
+    assert "baseBulletCount" not in role  # the base size: nothing extra to give back
+
+
+def test_merge_identity_lets_a_note_replace_the_base_bullet_it_overlaps():
+    # Shares MQTT, TimescaleDB and the platform with the IoT bullet but not its
+    # RFID or EV work: no rewrite of that bullet, and the notes prove it instead.
+    overlap = "Ran Kafka between the MQTT bridge and TimescaleDB on the Energy IoT platform, scaling consumers from 3 to 12 when tariff recalculation spiked."
+    role = _merge_role([_FAITHFUL_HUB, _FAITHFUL_WS, overlap])
+    assert role["bullets"] == [_FAITHFUL_HUB, _FAITHFUL_WS, overlap]
+
+
+def test_merge_identity_restores_the_bullet_an_unproven_note_would_have_replaced():
+    inflated = _NOTE_KAFKA.replace("to 12", "to 24")  # the notes say 12
+    role = _merge_role([_FAITHFUL_HUB, inflated, _FAITHFUL_WS])
+    assert role["bullets"] == [_FAITHFUL_HUB, _MEIKO["bullets"][2], _FAITHFUL_WS]
+
+
+def test_merge_identity_lets_proven_notes_add_to_a_role_and_marks_its_base_size():
+    role = _merge_role([*_REWRITES, _NOTE_KAFKA, _NOTE_API])
+    assert role["bullets"] == [*_REWRITES, _NOTE_KAFKA, _NOTE_API]
+    # The page-fit step gives back bullets beyond this count first.
+    assert role["baseBulletCount"] == 3
+
+
+def test_merge_identity_never_carries_notes_into_the_tailored_cv():
+    assert "notes" not in _merge_role([*_REWRITES, _NOTE_KAFKA])
+
+
+def test_merge_identity_drops_a_note_naming_a_tool_the_notes_never_mention():
+    kong = "Wrote the OpenAPI spec for the Merchant Hub public API behind Kong, with idempotency keys and per-merchant rate limits."
+    assert _merge_role([*_REWRITES, kong, _NOTE_KAFKA])["bullets"] == [*_REWRITES, _NOTE_KAFKA]
+
+
+def test_merge_identity_drops_a_note_the_notes_do_not_support():
+    # No number, no named tool: only its words can show it has no source.
+    generic = "Led architecture reviews with enterprise executives to steer payment platform decisions."
+    role = _merge_role([*_REWRITES, generic])
+    assert role["bullets"] == _REWRITES
+    assert "baseBulletCount" not in role
+
+
+def test_merge_identity_drops_a_note_that_restates_a_bullet():
+    restated = "Shipped EV charging point assignment, tariff handling and RFID management on the Energy IoT platform for utility clients."
+    notes = _MEIKO_NOTES + " " + restated
+    role = _merge_role([*_REWRITES, restated, _NOTE_API], notes=notes)
+    assert role["bullets"] == [*_REWRITES, _NOTE_API]
+
+
+def test_merge_identity_keeps_a_role_without_notes_to_its_base_bullets():
+    role = _merge_role([_FAITHFUL_HUB, _NOTE_KAFKA, _FAITHFUL_WS], notes=None)
+    assert role["bullets"] == [_FAITHFUL_HUB, _MEIKO["bullets"][2], _FAITHFUL_WS]
+
+
+def test_merge_identity_takes_at_most_three_bullets_per_role_from_notes():
+    role = _merge_role([*_REWRITES, _NOTE_KAFKA, _NOTE_API, _NOTE_K8S, _NOTE_ONCALL])
+    assert role["bullets"] == [*_REWRITES, _NOTE_KAFKA, _NOTE_API, _NOTE_K8S]

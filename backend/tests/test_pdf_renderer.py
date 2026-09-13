@@ -229,3 +229,20 @@ def test_fit_and_render_converges_with_the_deterministic_trimmer():
     assert final["skills"][0]["items"] == ["a", "b", "c", "d"]
     assert final["experience"][0]["bullets"] == ["b1", "b2"]
     assert final["fitNotes"] == ["Dropped to fit one page: Acme bullet 3 ('b3')"]
+
+
+def test_trim_content_first_takes_back_bullets_a_role_holds_beyond_its_base_count():
+    note = "Scaled Kafka consumers from 3 to 12."
+    data = {
+        **_TRIM_CV,
+        "experience": [
+            {"company": "Acme", "title": "SWE", "bullets": ["b1", "n1", "b2", note], "baseBulletCount": 2},
+            {"company": "Beta", "title": "SWE", "bullets": ["c1", "c2"]},
+        ],
+    }
+    out = pdf_generator.trim_content(data, 30)
+    # Summary and skills are untouched while a role holds more than its base size.
+    assert out["summary"] == _TRIM_CV["summary"]
+    assert out["skills"] == _TRIM_CV["skills"]
+    assert out["experience"][0]["bullets"] == ["b1", "n1", "b2"]
+    assert out["fitNotes"] == [f"Dropped to fit one page: Acme bullet 4 ({note!r})"]

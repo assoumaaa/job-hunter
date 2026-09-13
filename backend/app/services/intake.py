@@ -370,10 +370,20 @@ def generate_for_jobs(db: Session, user: User, job_ids: list[str]) -> list[Job]:
         )
 
         # Fit to one page NOW and store the fitted version. Views render the
-        # stored JSON verbatim, so any content trim must happen here.
+        # stored JSON verbatim, so any content trim must happen here. The trim
+        # drops whole items (recorded in fitNotes) and never rewrites a bullet:
+        # the Haiku trimmer, asked for ~30 words, cut 88 across every bullet,
+        # and nothing after merge_identity re-checked its output. Each trim takes
+        # one small item and is re-measured by a render, so the budget counts
+        # items (up to three bullets a role from notes, a summary sentence,
+        # skill items), not model calls.
         pdf_bytes, assembled = pdf_generator.fit_and_render(
-            assembled, trim_callback=claude.trim_resume_for_fit
+            assembled, trim_callback=pdf_generator.trim_content, max_trims=12
         )
+        # `baseBulletCount` only tells the trim what to give back first; the
+        # stored CV is exactly what the page shows.
+        for role in assembled.get("experience") or []:
+            role.pop("baseBulletCount", None)
 
         score = result.ats
         # Read the finished PDF back the way a parser would; anything it lost

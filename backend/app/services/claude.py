@@ -142,12 +142,21 @@ base CV's fuller wording over a shorter paraphrase.
 - If the base CV has projects, select ONLY the top 3 most relevant to this JD. Drop the rest.
 - Skills: 3-4 categories. Each category should fill its line. Spoken languages (Arabic, English, ...) NEVER appear in Skills, at any level — they are printed from the base CV in their own Languages section, and a second copy with a different level contradicts it.
 - Education, certifications, contact header and languages are NOT yours to write. They are copied verbatim from the base CV and appended after your output, so budget roughly 5-7 lines of page space for them.
+- A role that ends up with more bullets than the base CV gives it loses its least relevant bullets first when the page overflows, so never shorten a bullet to make room.
 
 ### Structure rules
 - PRESERVE the same jobs in the same reverse-chronological order
-- BULLET COUNT IS FIXED: keep the exact same number of bullets per role as the base CV -- never add or remove bullets
-- Per role you write ONLY the bullets and the title. Company, location and dates are copied from the base CV; echo the company name so roles line up, and never alter it.
-- NEVER invent projects, metrics, or experience not in the base CV
+- Per role you write ONLY the title and the bullets, most relevant to this JD first. Company, location and dates are copied from the base CV; echo the company name so roles line up, and never alter it.
+- A role WITHOUT notes keeps exactly the base CV's bullets: rephrase and reorder them, never add or remove one.
+- NEVER invent projects, metrics, or experience that is not in the base CV or the role's notes
+
+### Bullets from notes
+A role in the base CV may carry `notes`: the candidate's own unpolished record of what they did in that role. Notes are never printed; they are material to tailor from.
+- Read each role's notes against the JD. When a note shows work this JD asks for more directly than one of the role's base bullets does, write a bullet from the note and leave that base bullet out: the note replaces it. A bullet from notes may also go on top of the base bullets. At most 3 bullets per role come from notes.
+- Keep a base bullet whenever it is at least as relevant as anything the notes offer. Notes sharpen the fit; they are not a reason to churn a strong CV.
+- A bullet from notes follows the same writing rules as every bullet.
+- Every number, tool, system and name in it must appear in that role's notes or base bullets, and most of its words must come from the notes. Bullets are checked against the notes after you write them: one that stretches a note toward the JD is removed and the base bullet it replaced comes back. Use the notes' own facts, never the JD's vocabulary for work the notes don't describe.
+- Notes feed bullets only. Never put anything into the summary that appears only in the notes.
 
 ### Role-type decision (make it ONCE, apply it EVERYWHERE)
 Classify the target role into exactly one type:
@@ -378,7 +387,7 @@ def generate_cv_and_cl(
         user_message = (
             f"JOB: {job_title} at {company}\n\n"
             f"JOB DESCRIPTION:\n{job_description}{archetype_hint}\n\n"
-            f"Generate tailored resume JSON + cover letter. IMPORTANT: Keep the same jobs, same bullet counts. Only rephrase wording and reorder bullets within each job."
+            f"Generate tailored resume JSON + cover letter. IMPORTANT: Keep the same jobs. A role without notes keeps its bullet count: only rephrase wording and reorder bullets. A role with notes may use them as the Bullets from notes rules allow."
         )
     else:
         prev_str = (
@@ -392,7 +401,7 @@ def generate_cv_and_cl(
             f"JOB DESCRIPTION:\n{job_description}{archetype_hint}\n\n"
             f"PREVIOUS RESUME (Pass {pass_num - 1}, Score: {previous_score}/100):\n{prev_str}"
             f"{feedback_block}\n"
-            f"Apply the reviewer feedback verbatim where possible. Do NOT add or remove bullets — only rephrase."
+            f"Apply the reviewer feedback verbatim where possible. Do NOT add or remove bullets — only rephrase. Bullets written from notes in the previous resume stay; never write a new one."
         )
 
     # Two cache breakpoints: system prompt (global) + candidate context (per-user).

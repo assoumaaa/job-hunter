@@ -373,18 +373,40 @@ _MIN_SKILL_ITEMS = 4
 _MIN_BULLETS_PER_ROLE = 2
 
 
+def _drop_last_bullet(out: dict, role: dict) -> None:
+    """Take a role's last (least relevant) bullet off and say so in `fitNotes`."""
+    dropped = role["bullets"][-1]
+    role["bullets"] = list(role["bullets"][:-1])
+    out.setdefault("fitNotes", []).append(
+        f"Dropped to fit one page: {role.get('company', '?')} bullet "
+        f"{len(role['bullets']) + 1} ({_bullet_text(dropped)!r})"
+    )
+
+
 def trim_content(data: dict, overflow_words: int = 0) -> dict:
     """One deterministic step of content reduction. Never rewrites a bullet.
 
-    Order: the summary loses its last sentence while it has more than two;
-    then the longest skills row loses its last item while it has more than
-    four; then, as the last resort, the role with the most bullets loses its
-    last one (the generator orders bullets by relevance), never below two per
-    role, and the drop is recorded in `fitNotes` so the job can surface it.
-    `overflow_words` is accepted for the `fit_and_render` callback contract;
-    the step is fixed because every step is re-measured by a render.
+    Order: first a role holding more bullets than its base CV gave it
+    (`baseBulletCount`: it grew from its notes for this job) gives back its
+    last one; then the summary loses its last sentence while it has more than
+    two; then the longest skills row loses its last item while it has more
+    than four; then, as the last resort, the role with the most bullets loses
+    its last one (the generator orders bullets by relevance), never below two
+    per role. Every bullet drop is recorded in `fitNotes` so the job can
+    surface it. `overflow_words` is accepted for the `fit_and_render` callback
+    contract; the step is fixed because every step is re-measured by a render.
     """
     out = copy.deepcopy(data)
+
+    grown = [
+        r for r in (out.get("experience") or [])
+        if isinstance(r, dict)
+        and isinstance(r.get("baseBulletCount"), int)
+        and len(r.get("bullets") or []) > r["baseBulletCount"]
+    ]
+    if grown:
+        _drop_last_bullet(out, max(grown, key=lambda r: len(r["bullets"]) - r["baseBulletCount"]))
+        return out
 
     sentences = [x for x in _SENTENCE_END.split(str(out.get("summary") or "").strip()) if x]
     if len(sentences) > _MIN_SUMMARY_SENTENCES:
@@ -405,14 +427,7 @@ def trim_content(data: dict, overflow_words: int = 0) -> dict:
         if isinstance(r, dict) and len(r.get("bullets") or []) > _MIN_BULLETS_PER_ROLE
     ]
     if roles:
-        fullest = max(roles, key=lambda r: len(r["bullets"]))
-        dropped = fullest["bullets"][-1]
-        fullest["bullets"] = list(fullest["bullets"][:-1])
-        text = _bullet_text(dropped)
-        out.setdefault("fitNotes", []).append(
-            f"Dropped to fit one page: {fullest.get('company', '?')} bullet "
-            f"{len(fullest['bullets']) + 1} ({text!r})"
-        )
+        _drop_last_bullet(out, max(roles, key=lambda r: len(r["bullets"])))
     return out
 
 

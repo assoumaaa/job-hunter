@@ -1,9 +1,31 @@
 import { Briefcase, Plus } from "lucide-react";
+import { useId } from "react";
 
 import BulletRow from "./BulletRow";
-import { Field, ListItem, Section } from "./FormWidgets";
+import { AutoTextarea, Field, ListItem, Section } from "./FormWidgets";
 import { altTitlesText, newBullet } from "./cvData";
 import { Button } from "components/ui/button";
+
+// A role's private notes: never printed. When a job asks for work they
+// describe, a tailored CV may write up to three bullets from them, in place of
+// a less relevant bullet or on top of the role's bullets.
+function NotesField({ value, onChange }) {
+	const id = useId();
+	return (
+		<div className="flex flex-col gap-1.5">
+			<label htmlFor={id} className="text-micro font-medium text-ink-2">
+				Notes for tailoring (never printed; a tailored CV may write up to 3 bullets from these, replacing or adding to your bullets)
+			</label>
+			<AutoTextarea
+				id={id}
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+				minRows={3}
+				placeholder="Everything you did in this role: projects, tools, numbers, incidents, customers. Plain sentences are fine."
+			/>
+		</div>
+	);
+}
 
 function BulletList({ bullets, onChange }) {
 	const updateAt = (i, next) => onChange(bullets.map((b, j) => (j === i ? next : b)));
@@ -73,6 +95,7 @@ export default function ExperienceSection({ experience, onChange }) {
 						placeholder="Technical Solutions Consultant, Implementation Engineer"
 					/>
 					<BulletList bullets={exp.bullets || []} onChange={(b) => updateJob(i, { bullets: b })} />
+					<NotesField value={exp.notes} onChange={(v) => updateJob(i, { notes: v })} />
 				</ListItem>
 			))}
 			<Button variant="outline" size="sm" onClick={addJob}>

@@ -63,6 +63,17 @@ the code uses; keep them in step when the code changes.
   declared `alternateTitles` — the CV editor's per-role field that replaced
   the employer-specific retitle rule. `experience_years()` derives tenure from
   the period strings, overlaps counted once, the way a parser does.
+  A role may carry `notes`: the candidate's private, unpolished record of the
+  work, edited per role in the CV editor and never printed. In `_role_bullets`
+  a generated bullet that is no faithful rewrite may stand as a bullet from
+  notes (at most three a role) only if every number and named tool appears in
+  the notes or the role's own facts, at least half its words come from the
+  notes, and it restates no base bullet. That is how a note replaces a base
+  bullet the job cares less about; a base bullet the generator left out comes
+  back whenever the role would otherwise fall below its base count, so only a
+  proven note can take its place. A role that grows past its base count
+  carries `baseBulletCount` until the page is fitted; `notes` never reach a
+  tailored CV.
 
 - **Skill vocabulary** (`services/vocabulary.py`) — `canonicalize` folds
   synonyms ("React.js"→"react", "Postgres"→"postgresql", "k8s"→"kubernetes",
@@ -94,8 +105,14 @@ the code uses; keep them in step when the code changes.
   the check that tells you when the proxy stops being one.
 
 - **PDF renderer** (`services/pdf_generator.py`) — `fit_and_render` is the deep
-  entry: CSS auto-fit (8 tightening steps) then optional LLM trim, converging on
-  a one-page PDF. WeasyPrint sits behind the render seam (`use_renderer` /
+  entry: CSS auto-fit (8 tightening steps) then a trim callback, converging on
+  a one-page PDF. Generation passes `trim_content`, which never rewrites a
+  bullet: each step takes one whole item (the last bullet of a role that grew
+  past its `baseBulletCount`, then a summary sentence, then a skill item, then
+  the fullest role's last bullet) and records bullet drops in `fitNotes`. The
+  Haiku `trim_resume_for_fit` remains only behind the compile route's
+  `?trim=true` opt-in: asked to cut ~30 words it cut 88, across every bullet,
+  after the detail floor had already run. WeasyPrint sits behind the render seam (`use_renderer` /
   `reset_renderer`), so the fit/trim loop is testable without it. The trim loop
   swallows a failed trim but re-raises `IntakeError`: "add your API key" means the
   trim was never possible, and swallowing it returned a silently untrimmed PDF.
